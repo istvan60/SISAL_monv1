@@ -1,5 +1,3 @@
-#Please write R code that populates a SQL database with data stored on worksheets in an excel file. In the code, open the connection to the SQL server. Read and store each worksheet in the excel file in the R environment and upload the data of each worksheet to the database. Finally, close the database link. Return a log of the steps and their results.
-
 # DATABASE CONNECTION ENVIRONMENT VARIABLES
 # DB_HOST=127.0.0.1
 # DB_USER=sisaladmin
