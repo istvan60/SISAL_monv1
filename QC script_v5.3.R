@@ -1304,13 +1304,15 @@ precip_site_metadata <- read.xlsx(file_name, sheet="precip_site_metadata",
 point_A <- tibble(
   lon  = as.numeric(site_data$longitude),
   lat  = as.numeric(site_data$latitude),
-  name = site_data$site_name
+  name = as.character(site_data$site_name)
 )
+
 point_B <- tibble(
   lon  = as.numeric(precip_site_metadata$precip_longitude),
   lat  = as.numeric(precip_site_metadata$precip_latitude),
-  name = precip_site_metadata$precip_entity_name
+  name = as.character(precip_site_metadata$precip_entity_name)
 )
+
 points <- bind_rows(point_A, point_B)
 
 fig_map_world <- function(points, scale) {
