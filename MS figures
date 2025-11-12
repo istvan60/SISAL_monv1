@@ -1,0 +1,549 @@
+install.packages(c("tidyverse","sf","rnaturalearth","rnaturalearthdata",
+                   "ggpubr","patchwork","viridis","geodist","readr"))
+
+
+# --- SISAL monitoring plots (modernized: sf + rnaturalearth; no rgdal) ---
+# Original author: Franziska Lechleitner (with ChatGPT); updated 2025-11-10
+
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(readr)
+  library(sf)
+  library(rnaturalearth)
+  library(rnaturalearthdata)
+  library(viridis)
+  library(ggpubr)
+  library(patchwork)
+  library(geodist)
+})
+
+# ------------------------ Paths ------------------------
+datapath <- file.path(getwd(), "input")
+plotpath <- file.path(getwd(), "output")
+dir.create(plotpath, showWarnings = FALSE, recursive = TRUE)
+
+# ------------------------ Data -------------------------
+# CSVs
+
+mon      <- readr::read_csv(file.path(datapath, "Monv1_sites.csv"), show_col_types = FALSE)
+sisalv3  <- readr::read_csv(file.path(datapath, "SISALv3_site.csv"), show_col_types = FALSE)
+combined <- readr::read_csv(file.path(datapath, "Records_sisalv2_and_monv1.csv"), show_col_types = FALSE)
+aet_pet  <- readr::read_csv(file.path(datapath, "p_t_pet_aet.csv"), show_col_types = FALSE)
+
+# Ensure numeric lon/lat (robust to string columns)
+numify <- function(x) suppressWarnings(as.numeric(x))
+mon       <- mon      %>% mutate(longitude = numify(longitude), latitude = numify(latitude))
+sisalv3   <- sisalv3  %>% mutate(longitude = numify(longitude), latitude = numify(latitude))
+combined  <- combined %>% mutate(sisalv3.longitude = numify(sisalv3.longitude),
+                                 sisalv3.latitude  = numify(sisalv3.latitude))
+
+# ------------------------ Geometries (sf) -------------------------
+# World land polygon (sf)
+world_land <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf") %>%
+  st_transform(4326)
+
+# --- WOKAM karst polygons (robust read even if CRS is missing) ---
+# Try both paths: either directly in input/ or inside input/wokam/
+wokam_candidates <- c(
+  file.path(datapath, "wokam_final_WGS84.shp"),
+  file.path(datapath, "wokam", "wokam_final_WGS84.shp")
+)
+wokam_path <- wokam_candidates[file.exists(wokam_candidates)][1]
+
+WOKAM_CRS_EPSG <- 4326  # set to the correct EPSG if you know it differs
+
+wokam_sf <- tryCatch({
+  if (length(wokam_path) == 0) stop("WOKAM shapefile not found")
+  x <- sf::st_read(wokam_path, quiet = TRUE)
+  
+  # If the shapefile has no CRS, set it explicitly (assume WGS84 by default)
+  if (is.na(sf::st_crs(x))) {
+    message("WOKAM: missing CRS; assuming EPSG:", WOKAM_CRS_EPSG, " (WGS84).")
+    sf::st_crs(x) <- WOKAM_CRS_EPSG
+  }
+  
+  # Clean geometry just in case; drop Z/M and fix invalids
+  x <- sf::st_zm(x, drop = TRUE, what = "ZM")
+  x <- suppressWarnings(sf::st_make_valid(x))
+  
+  # Transform to WGS84 for plotting (no-op if already 4326)
+  x <- sf::st_transform(x, 4326)
+  x
+}, error = function(e) {
+  message("Could not load WOKAM layer: ", conditionMessage(e),
+          "\nProceeding without WOKAM.")
+  NULL
+})
+
+
+# Convert points to sf
+pts_sisal   <- st_as_sf(sisalv3, coords = c("longitude","latitude"), crs = 4326, remove = FALSE)
+pts_mon     <- st_as_sf(mon,     coords = c("longitude","latitude"), crs = 4326, remove = FALSE)
+pts_both    <- st_as_sf(combined, coords = c("sisalv3.longitude","sisalv3.latitude"), crs = 4326, remove = FALSE)
+
+# ------------------------ Styling -------------------------
+pt_size <- 2
+COLZ    <- c("#CC79A7", "#0072B2", "#F5C710", "#FFFFFF")
+
+base_map <- function(xlim = c(-180, 180), ylim = c(-90, 90)) {
+  ggplot() +
+    geom_sf(data = world_land, fill = "grey87", color = "grey", linewidth = 0.05, alpha = 0.7) +
+    { if (!is.null(wokam_sf)) geom_sf(data = wokam_sf, fill = "grey67", color = NA, alpha = 0.7) } +
+    coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
+    theme_bw() +
+    labs(x = "Longitude [deg]", y = "Latitude [deg]") +
+    theme(
+      axis.title.x = element_text(size = rel(0.8)),
+      axis.text.x  = element_text(size = rel(0.8)),
+      axis.title.y = element_text(size = rel(0.8)),
+      axis.text.y  = element_text(size = rel(0.8))
+    )
+}
+
+add_site_layers <- function(p) {
+  p +
+    geom_point(data = sisalv3, aes(longitude, latitude, shape = "SISALv3", color = "SISALv3", fill = "SISALv3"),
+               size = pt_size, alpha = 0.8, inherit.aes = FALSE, show.legend = TRUE) +
+    geom_point(data = mon, aes(longitude, latitude, shape = "SISAL_monv1", color = "SISAL_monv1", fill = "SISAL_monv1"),
+               size = pt_size * 1.5, inherit.aes = FALSE, show.legend = TRUE) +
+    geom_point(data = combined, aes(sisalv3.longitude, sisalv3.latitude, shape = "both datasets",
+                                    color = "both datasets", fill = "both datasets"),
+               size = pt_size * 1.2, inherit.aes = FALSE, show.legend = TRUE) +
+    scale_shape_manual(name = "Dataset",
+                       values = c("SISALv3" = 20, "SISAL_monv1" = 2, "both datasets" = 21)) +
+    scale_color_manual(name = "Dataset",
+                       values = c("SISALv3" = COLZ[1], "SISAL_monv1" = COLZ[2], "both datasets" = COLZ[4])) +
+    scale_fill_manual(name = "Dataset",
+                      values = c("SISALv3" = COLZ[1], "SISAL_monv1" = COLZ[2], "both datasets" = COLZ[3]))
+}
+
+# ------------------------ Global + Insets -------------------------
+plot_global <- base_map() %>%
+  add_site_layers() +
+  theme(
+    legend.position = c(0.0, 0.00),
+    legend.justification = c(0, 0),
+    legend.box = "vertical",
+    axis.text = element_blank(),
+    legend.box.background = element_blank(),
+    legend.background = element_rect(colour = "black"),
+    panel.border = element_blank()
+  )
+
+# helper for pretty °E/°W labels
+lon_lab <- function(x) paste0(abs(x), "°", ifelse(x < 0, "W", "E"))
+
+# B — North America
+plot_NAm <- base_map(xlim = c(-140, -50), ylim = c(0, 60)) %>%
+  add_site_layers() +
+  scale_x_continuous(breaks = seq(-140, -50, by = 20),
+                     labels = lon_lab,
+                     guide  = guide_axis(angle = 30)) +     # tilt longitude labels
+  theme(
+    aspect.ratio = 1,
+    legend.position = "none",
+    axis.text.y = element_blank(),                        # keep y tidy
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = rel(0.8)),
+    panel.border = element_blank()
+  )
+
+# C — Europe
+plot_Europe <- base_map(xlim = c(-10, 30), ylim = c(30, 70)) %>%
+  add_site_layers() +
+  scale_x_continuous(breaks = seq(-10, 30, by = 10),
+                     labels = lon_lab,
+                     guide  = guide_axis(angle = 30)) +
+  theme(
+    aspect.ratio = 1,
+    legend.position = "none",
+    axis.text.y = element_blank(),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = rel(0.8)),
+    panel.border = element_blank()
+  )
+
+# D — East Asia
+plot_EAsia <- base_map(xlim = c(95, 130), ylim = c(15, 45)) %>%
+  add_site_layers() +
+  scale_x_continuous(breaks = seq(95, 130, by = 10),
+                     labels = lon_lab,
+                     guide  = guide_axis(angle = 30)) +
+  theme(
+    aspect.ratio = 1,
+    legend.position = "none",
+    axis.text.y = element_blank(),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = rel(0.8)),
+    panel.border = element_blank()
+  )
+
+plot_map <- ggpubr::ggarrange(
+  plot_global,
+  ggpubr::ggarrange(plot_NAm, plot_Europe, plot_EAsia, labels = c("B","C","D"), ncol = 3, heights = c(1,1)),
+  ncol = 1, nrow = 2, heights = c(1.3, 1), labels = c("A"),
+  common.legend = TRUE, legend = "bottom"
+)
+
+ggsave(file.path(plotpath, "Fig1_map.pdf"), plot_map,
+       width = 1.7*12, height = 1.7*8, units = "cm", dpi = 300)
+ggsave(file.path(plotpath, "Fig1_map.png"), plot_map,
+       width = 1.7*12, height = 1.7*8, units = "cm", dpi = 300)
+
+# ------------------------ Regions & climate classes -------------------------
+# Regions
+mon_region <- mon %>%
+  mutate(region = case_when(
+    latitude > -60  & latitude < 0    & longitude > 90   & longitude < 180  ~ "Oceania",
+    latitude > 0    & latitude < 60   & longitude > 60   & longitude < 130  ~ "Asia",
+    latitude > -45  & latitude < 36.1 & longitude > -30  & longitude < 60   ~ "Africa",
+    latitude > 7.6  & latitude < 50   & longitude > 26   & longitude < 59   ~ "Middle East",
+    latitude > 36.7 & latitude < 75   & longitude > -30  & longitude < 30   ~ "Europe",
+    latitude > -60  & latitude < 8    & longitude > -150 & longitude < -30  ~ "South America",
+    latitude > 8.1  & latitude < 60   & longitude > -150 & longitude < -50  ~ "North/Central America",
+    TRUE ~ "Other"
+  ))
+
+# Aridity index by site (mean of yearly P/PET)
+annual_sums <- aet_pet %>%
+  group_by(site_id, year) %>%
+  summarise(
+    total_P   = sum(precipitation, na.rm = TRUE),
+    total_PET = sum(PET,           na.rm = TRUE),
+    .groups   = "drop"
+  )
+
+annual_AI <- annual_sums %>%
+  filter(is.finite(total_PET), total_PET > 0) %>%
+  mutate(AI = total_P / total_PET)
+
+mean_AI_per_site <- annual_AI %>%
+  group_by(site_id) %>%
+  summarise(mean_AI = mean(AI, na.rm = TRUE), .groups = "drop")
+
+AI_groups <- mean_AI_per_site %>%
+  mutate(classification = case_when(
+    mean_AI < 0.03                    ~ "Hyper arid",
+    mean_AI >= 0.03 & mean_AI < 0.2   ~ "Arid",
+    mean_AI >= 0.2  & mean_AI < 0.5   ~ "Semi-arid",
+    mean_AI >= 0.5  & mean_AI < 0.65  ~ "Dry sub-humid",
+    mean_AI >= 0.65                   ~ "Humid",
+    TRUE ~ "Other"
+  ))
+
+mon_region2 <- mon_region %>% left_join(AI_groups, by = "site_id")
+
+mon_region2 <- mon_region2 %>%
+  dplyr::mutate(classification = dplyr::coalesce(classification, "Other"))
+
+# Wide -> long for monitoring types
+mon_region_long <- mon_region2 %>%
+  tidyr::pivot_longer(
+    cols = c(`di.drip_iso_d18O_measurement exists`,
+             mod_carb_d18O_measurement,
+             drip_rate_measurement),
+    names_to = "type",
+    values_to = "value"
+  ) %>%
+  dplyr::filter(value == 1)
+
+
+
+# ---- Fixed levels ----
+TYPE_LEVELS <- c(
+  "di.drip_iso_d18O_measurement.exists",
+  "mod_carb_d18O_measurement",
+  "drip_rate_measurement"
+)
+
+REGION_LEVELS <- c(
+  "Europe","North/Central America","South America","Africa",
+  "Middle East","Asia","Oceania","Other"
+)
+
+CLASS_LEVELS <- c("Humid","Dry sub-humid","Semi-arid","Arid","Hyper arid","Other")
+
+# ---- Palettes ----
+# 1) One consistent palette for BOTH "Monitoring data by ..." plots (fill = type)
+TYPE_COLS <- c(
+  "di.drip_iso_d18O_measurement.exists" = "#3B82F6",  # blue
+  "mod_carb_d18O_measurement"           = "#10B981",  # green
+  "drip_rate_measurement"               = "#F59E0B"   # amber
+)
+
+# 2) A different palette for the Region pie (so it doesn't look like the bars)
+REGION_COLS <- setNames(viridis::magma(length(REGION_LEVELS), direction = -1), REGION_LEVELS)
+
+# 3) Another different palette for the Climate pie
+CLASS_COLS  <- setNames(viridis::cividis(length(CLASS_LEVELS)), CLASS_LEVELS)
+
+
+
+
+
+# make the column name match your TYPE_LEVELS and pivot code
+mon_region2 <- mon_region2 %>%
+  dplyr::rename(
+    `di.drip_iso_d18O_measurement.exists` = `di.drip_iso_d18O_measurement exists`
+  )
+
+# now this works:
+mon_region_long <- mon_region2 %>%
+  tidyr::pivot_longer(
+    cols = c(`di.drip_iso_d18O_measurement.exists`,
+             mod_carb_d18O_measurement,
+             drip_rate_measurement),
+    names_to = "type", values_to = "value"
+  ) %>%
+  dplyr::filter(value == 1) %>%
+  dplyr::mutate(type = factor(type, levels = TYPE_LEVELS))
+
+
+
+
+
+
+
+
+# Summaries
+region_summary <- mon_region_long %>%
+  group_by(region) %>%
+  summarise(total_sites = n_distinct(site_id), .groups = "drop")
+
+climate_summary <- mon_region_long %>%
+  group_by(classification) %>%
+  summarise(total_sites = n_distinct(site_id), .groups = "drop")
+
+# Plots
+# --- A) Sites by region (PIE) → distinct palette for regions ---
+pie_region <- ggplot(region_summary, aes(x = "", y = total_sites, fill = region)) +
+  geom_col() + coord_polar(theta = "y") + theme_void() +
+  ggtitle("Sites by region") +
+  scale_fill_manual(values = REGION_COLS, breaks = REGION_LEVELS, name = "")
+
+# --- B) Monitoring data by region (BAR) → shared TYPE palette ---
+hist_region <- mon_region_long %>%
+  mutate(type = factor(type, levels = TYPE_LEVELS)) %>%
+  group_by(region, type) %>%
+  summarise(n_sites = n_distinct(site_id), .groups = "drop") %>%
+  ggplot(aes(x = region, y = n_sites, fill = type)) +
+  geom_col(position = "dodge") +
+  ggtitle("Monitoring data by region") +
+  labs(fill = "Data type", x = "Region", y = "Number of sites") +
+  theme_minimal() +
+  scale_fill_manual(
+    values = TYPE_COLS,
+    breaks = TYPE_LEVELS,
+    labels = c("dripwater d18O", "modern carbonate d18O", "drip rate")
+  ) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+
+# --- C) Sites by climate (PIE) → distinct palette for classes ---
+pie_climate <- ggplot(climate_summary, aes(x = "", y = total_sites, fill = classification)) +
+  geom_col() + coord_polar(theta = "y") + theme_void() +
+  ggtitle("Sites by climate class") +
+  scale_fill_manual(values = CLASS_COLS, breaks = CLASS_LEVELS, name = "")
+
+# --- D) Monitoring data by climate class (BAR) → shared TYPE palette ---
+hist_climate <- mon_region_long %>%
+  mutate(type = factor(type, levels = TYPE_LEVELS)) %>%
+  group_by(classification, type) %>%
+  summarise(n_sites = n_distinct(site_id), .groups = "drop") %>%
+  ggplot(aes(x = classification, y = n_sites, fill = type)) +
+  geom_col(position = "dodge") +
+  ggtitle("Monitoring data by climate class") +
+  labs(fill = "Data type", x = "Climate class", y = "Number of sites") +
+  theme_minimal() +
+  scale_fill_manual(
+    values = TYPE_COLS,
+    breaks = TYPE_LEVELS,
+    labels = c("dripwater d18O", "modern carbonate d18O", "drip rate")
+  )
+
+
+region_plot  <- pie_region  / hist_region  + plot_layout(heights = c(1.5, 1))
+climate_plot <- pie_climate / hist_climate + plot_layout(heights = c(1.5, 1))
+
+ggsave(file.path(plotpath, "Fig3_region.pdf"),  region_plot,
+       width = 1.7*10, height = 1.7*12, units = "cm", dpi = 300)
+ggsave(file.path(plotpath, "Fig3_region.png"),  region_plot,
+       width = 1.7*10, height = 1.7*12, units = "cm", dpi = 300)
+ggsave(file.path(plotpath, "Fig3_climate.pdf"), climate_plot,
+       width = 1.7*10, height = 1.7*12, units = "cm", dpi = 300)
+ggsave(file.path(plotpath, "Fig3_climate.png"), climate_plot,
+       width = 1.7*10, height = 1.7*12, units = "cm", dpi = 300)
+
+# ------------------------ Distances: SISAL vs MON within X km -------------------------
+# Use geodist (fast; Haversine default). Alternatively: sf::st_distance with s2 geodesics.
+
+
+# --- Overlap & proximity + map (drop >50 km) ---
+# Inputs:
+#   - mon     <- read_csv("input/Monv1_sites_.csv")
+#   - sisal   <- sisalv3   # already in memory
+#   - mapping <- combined  # already in memory
+
+suppressPackageStartupMessages({
+  library(readr)
+  library(dplyr)
+  library(geodist)
+  library(tibble)
+  library(sf)
+  library(ggplot2)
+  library(viridis)
+  library(rnaturalearth)
+  library(rnaturalearthdata)
+  library(stringr)
+})
+
+datapath <- "input"
+outpath  <- "output"
+dir.create(outpath, showWarnings = FALSE, recursive = TRUE)
+
+# ---------- Load Monv1 (explicit CSV), use your in-memory sisal/mapping ----------
+numify <- function(x) suppressWarnings(as.numeric(x))
+
+mon <- read_csv(file.path(datapath, "Monv1_sites.csv"), show_col_types = FALSE) %>%
+  transmute(
+    site_id   = as.character(site_id),
+    latitude  = numify(latitude),
+    longitude = numify(longitude)
+  ) %>%
+  distinct(site_id, .keep_all = TRUE) %>%
+  filter(is.finite(latitude), is.finite(longitude))
+
+sisal <- sisalv3 %>%   # from sisalv3
+  transmute(
+    site_id   = as.character(site_id),
+    latitude  = numify(latitude),
+    longitude = numify(longitude)
+  ) %>%
+  distinct(site_id, .keep_all = TRUE) %>%
+  filter(is.finite(latitude), is.finite(longitude))
+
+# ---------- 1) Overlap: % of Monv1 sites that are also in SISALv3 ----------
+# Use the explicit mapping table (combined) that links monv1.site_id <-> sisalv3.site_id
+n_mon <- dplyr::n_distinct(mon$site_id)
+
+mapping<-combined
+
+n_common <- mapping %>%
+  filter(!is.na(`monv1.site_id`), !is.na(`sisalv3.site_id`)) %>%
+  summarise(n = n_distinct(`monv1.site_id`), .groups = "drop") %>%
+  pull(n)
+n_common <- ifelse(length(n_common) == 0, 0L, n_common)
+
+pct_mon_common_in_sisal <- if (n_mon > 0) round(100 * n_common / n_mon, 1) else NA_real_
+
+# ---------- 2) Proximity: % of SISALv3 within 25/50 km of any Monv1 ----------
+# Great-circle distances (Haversine) with geodist; returns meters
+D_m <- geodist::geodist(
+  x = sisal %>% select(longitude, latitude),
+  y = mon   %>% select(longitude, latitude),
+  paired = FALSE, measure = "haversine"
+)
+
+# For each SISALv3 row, nearest Monv1 distance (km)
+min_dist_km <- apply(as.matrix(D_m), 1, min) / 1000
+
+within_25 <- sum(min_dist_km <= 25, na.rm = TRUE)
+within_50 <- sum(min_dist_km <= 50, na.rm = TRUE)
+
+n_sisal <- nrow(sisal)
+pct_sisal_within_25 <- if (n_sisal > 0) round(100 * within_25 / n_sisal, 1) else NA_real_
+pct_sisal_within_50 <- if (n_sisal > 0) round(100 * within_50 / n_sisal, 1) else NA_real_
+
+# ---------- Summary table ----------
+summary_tbl <- tibble::tibble(
+  metric = c(
+    "SISAL_monv1 sites common to SISALv3 [%]",
+    "SISALv3 sites within 25 km of a Monv1 site [%]",
+    "SISALv3 sites within 50 km of a Monv1 site [%]",
+    "n_Monv1_sites",
+    "n_SISALv3_sites",
+    "n_common_monv1_site_ids",
+    "n_SISALv3_within_25km",
+    "n_SISALv3_within_50km"
+  ),
+  value = c(
+    pct_mon_common_in_sisal,
+    pct_sisal_within_25,
+    pct_sisal_within_50,
+    n_mon,
+    n_sisal,
+    n_common,
+    within_25,
+    within_50
+  )
+)
+print(summary_tbl, n = Inf)
+readr::write_csv(summary_tbl, file.path(outpath, "overlap_proximity_summary.csv"))
+
+# ---------- 3) Map: color SISALv3 by proximity class; DROP >50 km ----------
+# Proximity classes
+sisal$prox_class <- cut(
+  min_dist_km,
+  breaks = c(-Inf, 25, 50, Inf),
+  labels = c("≤25 km", "25–50 km", ">50 km")
+)
+
+# Keep only ≤25 & 25–50 km
+keep_levels <- c("≤25 km", "25–50 km")
+sisal_filt <- sisal %>%
+  filter(!is.na(prox_class), prox_class %in% keep_levels) %>%
+  mutate(prox_class = factor(prox_class, levels = keep_levels))
+
+# Colors for the two kept classes
+PROX_LEVELS <- keep_levels
+PROX_COLS   <- setNames(viridis::viridis(length(PROX_LEVELS)), PROX_LEVELS)
+
+# sf layers
+world   <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf") %>% st_transform(4326)
+mon_sf  <- sf::st_as_sf(mon,        coords = c("longitude","latitude"), crs = 4326, remove = FALSE)
+sis_sf  <- sf::st_as_sf(sisal_filt, coords = c("longitude","latitude"), crs = 4326, remove = FALSE)
+
+# Subtitle with the key numbers
+subtitle_txt <- sprintf(
+  "Overlap: %.1f%% of Monv1 in SISALv3 | Coverage: %.1f%% ≤25 km, %.1f%% 25–50 km (SISALv3, n=%d)",
+  pct_mon_common_in_sisal,
+  pct_sisal_within_25,
+  max(0, pct_sisal_within_50 - pct_sisal_within_25),
+  n_sisal
+)
+
+p_map <- ggplot() +
+  geom_sf(data = world, fill = "grey90", color = "grey70", linewidth = 0.2) +
+  # SISALv3 (filtered) colored by proximity
+  geom_point(data = sis_sf,
+             aes(x = longitude, y = latitude, fill = prox_class),
+             shape = 21, size = 2.2, color = "black", alpha = 0.9, na.rm = TRUE) +
+  # Monv1 (all) as outline triangles
+  geom_point(data = mon_sf,
+             aes(x = longitude, y = latitude),
+             shape = 24, size = 2.6, color = "black", fill = NA, stroke = 0.7, na.rm = TRUE) +
+  coord_sf(xlim = c(-180, 180), ylim = c(-60, 85), expand = FALSE) +
+  scale_fill_manual(
+    name   = "Nearest Monv1 site",
+    values = PROX_COLS,
+    breaks = PROX_LEVELS,
+    drop   = FALSE
+  ) +
+  guides(fill = guide_legend(override.aes = list(shape = 21, color = "black"))) +
+  labs(
+    title    = "SISALv3 sites within 50 km of a Monv1 site",
+    subtitle = subtitle_txt,
+    x = "Longitude [°]", y = "Latitude [°]"
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_line(size = 0.2, colour = "grey85"),
+    legend.position  = "bottom",
+    legend.box       = "vertical"
+  )
+
+# Save figure
+ggsave(file.path(outpath, "Fig_proximity_map_le50km.pdf"), p_map,
+       width = 10, height = 5.5, units = "in", dpi = 300)
+ggsave(file.path(outpath, "Fig_proximity_map_le50km.png"), p_map,
+       width = 10, height = 5.5, units = "in", dpi = 300)
+
