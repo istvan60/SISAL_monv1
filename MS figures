@@ -214,34 +214,7 @@ if ("di.drip_iso_d18O_measurement exists" %in% names(mon)) {
 # Ensure the three columns exist in `mon` (default 0)
 for (nm in flag_cols) if (!nm %in% names(mon)) mon[[nm]] <- 0L
 
-# ---- Optionally enrich the flags from drip_entity_metadata.csv if available ----
-meta_path <- file.path(getwd(), "input", "drip_entity_metadata.csv")
-if (file.exists(meta_path)) {
-  yn <- c("yes","y","1","true","t")
-  meta <- readr::read_csv(meta_path, show_col_types = FALSE) %>%
-    transmute(
-      site_id = as.character(site_id),
-      `di.drip_iso_d18O_measurement.exists` =
-        as.integer(tolower(as.character(drip_iso))  %in% yn),
-      `mod_carb_d18O_measurement` =
-        as.integer(tolower(as.character(mod_carb))  %in% yn),
-      `drip_rate_measurement` =
-        as.integer(tolower(as.character(drip_rate)) %in% yn)
-    )
-  
-  mon <- mon %>%
-    mutate(site_id = as.character(site_id)) %>%
-    left_join(meta, by = "site_id", suffix = c("", ".meta"))
-  
-  # logical OR between existing and metadata flags (use pmax on integers)
-  for (nm in flag_cols) {
-    mcol <- paste0(nm, ".meta")
-    if (!mcol %in% names(mon)) mon[[mcol]] <- 0L
-    mon[[nm]] <- pmax(replace(mon[[nm]], is.na(mon[[nm]]), 0L),
-                      replace(mon[[mcol]], is.na(mon[[mcol]]), 0L))
-    mon[[mcol]] <- NULL
-  }
-}
+
 
 # ---- Regions (same rules as yours) ----
 mon_region <- mon %>%
@@ -523,4 +496,3 @@ tibble::tibble(
     sprintf("%d/%d", n_sisal_within_50, n_sisal)
   )
 ) %>% print(n = Inf)
-
