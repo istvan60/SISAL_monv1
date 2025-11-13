@@ -130,23 +130,33 @@ plot_global <- base_map() %>%
     panel.border = element_blank()
   )
 
-# helper for pretty °E/°W labels
+
+
+# pretty labels
 lon_lab <- function(x) paste0(abs(x), "°", ifelse(x < 0, "W", "E"))
+lat_lab <- function(y) paste0(abs(y), "°", ifelse(y < 0, "S", "N"))
+
+inset_theme <- theme(
+  aspect.ratio = 1,
+  legend.position = "none",
+  axis.title.x = element_text(size = rel(0.8)),
+  axis.title.y = element_text(size = rel(0.8)),
+  axis.text.x  = element_text(size = rel(0.8)),
+  axis.text.y  = element_text(size = rel(0.8)),  # <-- turn ON
+  plot.margin  = margin(t = 5.5, r = 6, b = 8, l = 24),  # extra left room
+  panel.border = element_blank()
+)
 
 # B — North America
 plot_NAm <- base_map(xlim = c(-140, -50), ylim = c(0, 60)) %>%
   add_site_layers() +
   scale_x_continuous(breaks = seq(-140, -50, by = 20),
                      labels = lon_lab,
-                     guide  = guide_axis(angle = 30)) +     # tilt longitude labels
-  theme(
-    aspect.ratio = 1,
-    legend.position = "none",
-    axis.text.y = element_blank(),                        # keep y tidy
-    axis.title.y = element_blank(),
-    axis.title.x = element_text(size = rel(0.8)),
-    panel.border = element_blank()
-  )
+                     guide  = guide_axis(angle = 30)) +
+  scale_y_continuous(breaks = seq(0, 60, by = 10),
+                     labels = lat_lab) +
+  labs(x = "Longitude [deg]", y = "Latitude [deg]") +
+  inset_theme
 
 # C — Europe
 plot_Europe <- base_map(xlim = c(-10, 30), ylim = c(30, 70)) %>%
@@ -154,14 +164,10 @@ plot_Europe <- base_map(xlim = c(-10, 30), ylim = c(30, 70)) %>%
   scale_x_continuous(breaks = seq(-10, 30, by = 10),
                      labels = lon_lab,
                      guide  = guide_axis(angle = 30)) +
-  theme(
-    aspect.ratio = 1,
-    legend.position = "none",
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank(),
-    axis.title.x = element_text(size = rel(0.8)),
-    panel.border = element_blank()
-  )
+  scale_y_continuous(breaks = seq(30, 70, by = 10),
+                     labels = lat_lab) +
+  labs(x = "Longitude [deg]", y = "Latitude [deg]") +
+  inset_theme
 
 # D — East Asia
 plot_EAsia <- base_map(xlim = c(95, 130), ylim = c(15, 45)) %>%
@@ -169,14 +175,12 @@ plot_EAsia <- base_map(xlim = c(95, 130), ylim = c(15, 45)) %>%
   scale_x_continuous(breaks = seq(95, 130, by = 10),
                      labels = lon_lab,
                      guide  = guide_axis(angle = 30)) +
-  theme(
-    aspect.ratio = 1,
-    legend.position = "none",
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank(),
-    axis.title.x = element_text(size = rel(0.8)),
-    panel.border = element_blank()
-  )
+  scale_y_continuous(breaks = seq(15, 45, by = 10),
+                     labels = lat_lab) +
+  labs(x = "Longitude [deg]", y = "Latitude [deg]") +
+  inset_theme
+
+
 
 plot_map <- ggpubr::ggarrange(
   plot_global,
@@ -191,7 +195,55 @@ ggsave(file.path(plotpath, "Fig1_map.png"), plot_map,
        width = 1.7*12, height = 1.7*8, units = "cm", dpi = 300)
 
 # ------------------------ Regions & climate classes -------------------------
-# Regions
+suppressPackageStartupMessages({
+  library(dplyr); library(tidyr); library(ggplot2)
+  library(patchwork); library(viridis); library(stringr); library(readr)
+})
+
+# --- canonical names for the three monitoring flags used everywhere
+flag_cols <- c("di.drip_iso_d18O_measurement.exists",
+               "mod_carb_d18O_measurement",
+               "drip_rate_measurement")
+
+# If the di.drip column came in with a SPACE before 'exists', normalize it once
+if ("di.drip_iso_d18O_measurement exists" %in% names(mon)) {
+  mon <- mon %>%
+    dplyr::rename(`di.drip_iso_d18O_measurement.exists` = `di.drip_iso_d18O_measurement exists`)
+}
+
+# Ensure the three columns exist in `mon` (default 0)
+for (nm in flag_cols) if (!nm %in% names(mon)) mon[[nm]] <- 0L
+
+# ---- Optionally enrich the flags from drip_entity_metadata.csv if available ----
+meta_path <- file.path(getwd(), "input", "drip_entity_metadata.csv")
+if (file.exists(meta_path)) {
+  yn <- c("yes","y","1","true","t")
+  meta <- readr::read_csv(meta_path, show_col_types = FALSE) %>%
+    transmute(
+      site_id = as.character(site_id),
+      `di.drip_iso_d18O_measurement.exists` =
+        as.integer(tolower(as.character(drip_iso))  %in% yn),
+      `mod_carb_d18O_measurement` =
+        as.integer(tolower(as.character(mod_carb))  %in% yn),
+      `drip_rate_measurement` =
+        as.integer(tolower(as.character(drip_rate)) %in% yn)
+    )
+  
+  mon <- mon %>%
+    mutate(site_id = as.character(site_id)) %>%
+    left_join(meta, by = "site_id", suffix = c("", ".meta"))
+  
+  # logical OR between existing and metadata flags (use pmax on integers)
+  for (nm in flag_cols) {
+    mcol <- paste0(nm, ".meta")
+    if (!mcol %in% names(mon)) mon[[mcol]] <- 0L
+    mon[[nm]] <- pmax(replace(mon[[nm]], is.na(mon[[nm]]), 0L),
+                      replace(mon[[mcol]], is.na(mon[[mcol]]), 0L))
+    mon[[mcol]] <- NULL
+  }
+}
+
+# ---- Regions (same rules as yours) ----
 mon_region <- mon %>%
   mutate(region = case_when(
     latitude > -60  & latitude < 0    & longitude > 90   & longitude < 180  ~ "Oceania",
@@ -204,8 +256,9 @@ mon_region <- mon %>%
     TRUE ~ "Other"
   ))
 
-# Aridity index by site (mean of yearly P/PET)
+# ---- Aridity index by site (mean of yearly P/PET) ----
 annual_sums <- aet_pet %>%
+  mutate(site_id = as.character(site_id)) %>%
   group_by(site_id, year) %>%
   summarise(
     total_P   = sum(precipitation, na.rm = TRUE),
@@ -231,81 +284,34 @@ AI_groups <- mean_AI_per_site %>%
     TRUE ~ "Other"
   ))
 
-mon_region2 <- mon_region %>% left_join(AI_groups, by = "site_id")
+# ---- Merge, set NA → "Other", lock factor levels ----
+REGION_LEVELS <- c("Europe","North/Central America","South America","Africa",
+                   "Middle East","Asia","Oceania","Other")
+CLASS_LEVELS  <- c("Humid","Dry sub-humid","Semi-arid","Arid","Hyper arid","Other")
+TYPE_LEVELS   <- flag_cols
 
-mon_region2 <- mon_region2 %>%
-  dplyr::mutate(classification = dplyr::coalesce(classification, "Other"))
-
-# Wide -> long for monitoring types
-mon_region_long <- mon_region2 %>%
-  tidyr::pivot_longer(
-    cols = c(`di.drip_iso_d18O_measurement exists`,
-             mod_carb_d18O_measurement,
-             drip_rate_measurement),
-    names_to = "type",
-    values_to = "value"
+mon_region2 <- mon_region %>%
+  left_join(AI_groups, by = "site_id") %>%
+  mutate(
+    region         = coalesce(region, "Other"),
+    classification = coalesce(classification, "Other"),
+    region         = factor(region,         levels = REGION_LEVELS),
+    classification = factor(classification, levels = CLASS_LEVELS)
   ) %>%
-  dplyr::filter(value == 1)
+  # coerce any weird truthy values in flags to strict 0/1
+  mutate(across(all_of(flag_cols),
+                ~ as.integer(. %in% c(1, "1", TRUE, "TRUE", "true")), .names = "{.col}"))
 
-
-
-# ---- Fixed levels ----
-TYPE_LEVELS <- c(
-  "di.drip_iso_d18O_measurement.exists",
-  "mod_carb_d18O_measurement",
-  "drip_rate_measurement"
-)
-
-REGION_LEVELS <- c(
-  "Europe","North/Central America","South America","Africa",
-  "Middle East","Asia","Oceania","Other"
-)
-
-CLASS_LEVELS <- c("Humid","Dry sub-humid","Semi-arid","Arid","Hyper arid","Other")
-
-# ---- Palettes ----
-# 1) One consistent palette for BOTH "Monitoring data by ..." plots (fill = type)
-TYPE_COLS <- c(
-  "di.drip_iso_d18O_measurement.exists" = "#3B82F6",  # blue
-  "mod_carb_d18O_measurement"           = "#10B981",  # green
-  "drip_rate_measurement"               = "#F59E0B"   # amber
-)
-
-# 2) A different palette for the Region pie (so it doesn't look like the bars)
-REGION_COLS <- setNames(viridis::magma(length(REGION_LEVELS), direction = -1), REGION_LEVELS)
-
-# 3) Another different palette for the Climate pie
-CLASS_COLS  <- setNames(viridis::cividis(length(CLASS_LEVELS)), CLASS_LEVELS)
-
-
-
-
-
-# make the column name match your TYPE_LEVELS and pivot code
-mon_region2 <- mon_region2 %>%
-  dplyr::rename(
-    `di.drip_iso_d18O_measurement.exists` = `di.drip_iso_d18O_measurement exists`
-  )
-
-# now this works:
+# ---- Wide → long for monitoring types ----
 mon_region_long <- mon_region2 %>%
-  tidyr::pivot_longer(
-    cols = c(`di.drip_iso_d18O_measurement.exists`,
-             mod_carb_d18O_measurement,
-             drip_rate_measurement),
+  pivot_longer(
+    cols = all_of(flag_cols),
     names_to = "type", values_to = "value"
   ) %>%
-  dplyr::filter(value == 1) %>%
-  dplyr::mutate(type = factor(type, levels = TYPE_LEVELS))
+  filter(value == 1) %>%
+  mutate(type = factor(type, levels = TYPE_LEVELS))
 
-
-
-
-
-
-
-
-# Summaries
+# ---- Summaries (count unique sites with any monitored data) ----
 region_summary <- mon_region_long %>%
   group_by(region) %>%
   summarise(total_sites = n_distinct(site_id), .groups = "drop")
@@ -314,56 +320,88 @@ climate_summary <- mon_region_long %>%
   group_by(classification) %>%
   summarise(total_sites = n_distinct(site_id), .groups = "drop")
 
-# Plots
-# --- A) Sites by region (PIE) → distinct palette for regions ---
+# ---- Palettes ----
+# 1) One consistent palette for both "Monitoring data by ..." bar charts (fill = type)
+TYPE_COLS <- c(
+  "di.drip_iso_d18O_measurement.exists" = "#3B82F6",  # blue
+  "mod_carb_d18O_measurement"           = "#10B981",  # green
+  "drip_rate_measurement"               = "#F59E0B"   # amber
+)
+
+# 2) Different palette for the Region pie
+REGION_COLS <- setNames(viridis::magma(length(REGION_LEVELS), direction = -1),
+                        REGION_LEVELS)
+
+# 3) Different palette for the Climate pie
+CLASS_COLS  <- setNames(viridis::cividis(length(CLASS_LEVELS)), CLASS_LEVELS)
+
+# ---- Wrappers to avoid tilted labels (keeps aspect identical across stacks) ----
+region_lab <- function(x) str_replace(x, "North/Central America", "North/\nCentral America")
+class_lab  <- function(x) str_replace(x, "Dry sub-humid", "Dry\nsub-humid")
+
+HIST_THEME <- theme_minimal() +
+  theme(
+    plot.margin  = margin(6, 6, 16, 6),
+    axis.text.x  = element_text(size = rel(0.9),
+                                angle = 25, hjust = 1, vjust = 1),  # <-- tilt labels
+    axis.title.x = element_text(size = rel(0.95)),                  # title stays horizontal
+    axis.title.y = element_text(size = rel(0.95))
+  )
+
+# ------------------------ Plots -------------------------
+# A) Sites by region (pie) – distinct palette
 pie_region <- ggplot(region_summary, aes(x = "", y = total_sites, fill = region)) +
   geom_col() + coord_polar(theta = "y") + theme_void() +
   ggtitle("Sites by region") +
-  scale_fill_manual(values = REGION_COLS, breaks = REGION_LEVELS, name = "")
+  scale_fill_manual(values = REGION_COLS, limits = REGION_LEVELS, drop = FALSE, name = "")
 
-# --- B) Monitoring data by region (BAR) → shared TYPE palette ---
+# B) Monitoring data by region (bars) – shared TYPE palette
 hist_region <- mon_region_long %>%
-  mutate(type = factor(type, levels = TYPE_LEVELS)) %>%
   group_by(region, type) %>%
   summarise(n_sites = n_distinct(site_id), .groups = "drop") %>%
   ggplot(aes(x = region, y = n_sites, fill = type)) +
   geom_col(position = "dodge") +
   ggtitle("Monitoring data by region") +
   labs(fill = "Data type", x = "Region", y = "Number of sites") +
-  theme_minimal() +
-  scale_fill_manual(
-    values = TYPE_COLS,
-    breaks = TYPE_LEVELS,
-    labels = c("dripwater d18O", "modern carbonate d18O", "drip rate")
-  ) +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+  scale_x_discrete(labels = region_lab, drop = FALSE) +
+  scale_fill_manual(values = TYPE_COLS, limits = TYPE_LEVELS,
+                    labels = c("dripwater d18O","modern carbonate d18O","drip rate"),
+                    drop = FALSE) +
+  HIST_THEME
 
-# --- C) Sites by climate (PIE) → distinct palette for classes ---
+# C) Sites by climate (pie) – distinct palette
 pie_climate <- ggplot(climate_summary, aes(x = "", y = total_sites, fill = classification)) +
   geom_col() + coord_polar(theta = "y") + theme_void() +
   ggtitle("Sites by climate class") +
-  scale_fill_manual(values = CLASS_COLS, breaks = CLASS_LEVELS, name = "")
+  scale_fill_manual(values = CLASS_COLS, limits = CLASS_LEVELS, drop = FALSE, name = "")
 
-# --- D) Monitoring data by climate class (BAR) → shared TYPE palette ---
+# D) Monitoring data by climate (bars) – shared TYPE palette
 hist_climate <- mon_region_long %>%
-  mutate(type = factor(type, levels = TYPE_LEVELS)) %>%
   group_by(classification, type) %>%
   summarise(n_sites = n_distinct(site_id), .groups = "drop") %>%
   ggplot(aes(x = classification, y = n_sites, fill = type)) +
   geom_col(position = "dodge") +
   ggtitle("Monitoring data by climate class") +
   labs(fill = "Data type", x = "Climate class", y = "Number of sites") +
-  theme_minimal() +
-  scale_fill_manual(
-    values = TYPE_COLS,
-    breaks = TYPE_LEVELS,
-    labels = c("dripwater d18O", "modern carbonate d18O", "drip rate")
-  )
+  scale_x_discrete(labels = class_lab, drop = FALSE) +
+  scale_fill_manual(values = TYPE_COLS, limits = TYPE_LEVELS,
+                    labels = c("dripwater d18O","modern carbonate d18O","drip rate"),
+                    drop = FALSE) +
+  HIST_THEME
 
-
+# ---- Stacks with identical proportions ----
 region_plot  <- pie_region  / hist_region  + plot_layout(heights = c(1.5, 1))
 climate_plot <- pie_climate / hist_climate + plot_layout(heights = c(1.5, 1))
 
+# (Optional) export a single side-by-side canvas to guarantee matched layout
+fig3_side_by_side <- region_plot | climate_plot
+
+ggsave(file.path(plotpath, "Fig3_side_by_side.pdf"),
+       fig3_side_by_side, width = 1.7*20, height = 1.7*12, units = "cm", dpi = 300)
+ggsave(file.path(plotpath, "Fig3_side_by_side.png"),
+       fig3_side_by_side, width = 1.7*20, height = 1.7*12, units = "cm", dpi = 300)
+
+# Also keep your separate exports if you want them:
 ggsave(file.path(plotpath, "Fig3_region.pdf"),  region_plot,
        width = 1.7*10, height = 1.7*12, units = "cm", dpi = 300)
 ggsave(file.path(plotpath, "Fig3_region.png"),  region_plot,
@@ -436,48 +474,56 @@ n_common <- ifelse(length(n_common) == 0, 0L, n_common)
 pct_mon_common_in_sisal <- if (n_mon > 0) round(100 * n_common / n_mon, 1) else NA_real_
 
 # ---------- 2) Proximity: % of SISALv3 within 25/50 km of any Monv1 ----------
-# Great-circle distances (Haversine) with geodist; returns meters
+# Great-circle distances (Haversine); rows = SISALv3, cols = Monv1
 D_m <- geodist::geodist(
-  x = sisal %>% select(longitude, latitude),
-  y = mon   %>% select(longitude, latitude),
+  x = sisal %>% dplyr::select(longitude, latitude),
+  y = mon   %>% dplyr::select(longitude, latitude),
   paired = FALSE, measure = "haversine"
 )
 
-# For each SISALv3 row, nearest Monv1 distance (km)
-min_dist_km <- apply(as.matrix(D_m), 1, min) / 1000
+# --- A) % of Monv1 sites within X km of any SISALv3 site (what you want) ---
+# For each Monv1 column, find nearest SISALv3 (min across rows)
+min_mon_to_sisal_km <- apply(as.matrix(D_m), 2, min) / 1000
 
-within_25 <- sum(min_dist_km <= 25, na.rm = TRUE)
-within_50 <- sum(min_dist_km <= 50, na.rm = TRUE)
+n_mon          <- nrow(mon)
+n_mon_within_25 <- sum(min_mon_to_sisal_km <= 25, na.rm = TRUE)
+n_mon_within_50 <- sum(min_mon_to_sisal_km <= 50, na.rm = TRUE)
 
-n_sisal <- nrow(sisal)
-pct_sisal_within_25 <- if (n_sisal > 0) round(100 * within_25 / n_sisal, 1) else NA_real_
-pct_sisal_within_50 <- if (n_sisal > 0) round(100 * within_50 / n_sisal, 1) else NA_real_
+pct_mon_within_25 <- if (n_mon > 0) round(100 * n_mon_within_25 / n_mon, 1) else NA_real_
+pct_mon_within_50 <- if (n_mon > 0) round(100 * n_mon_within_50 / n_mon, 1) else NA_real_
 
-# ---------- Summary table ----------
-summary_tbl <- tibble::tibble(
+# Example: if 69 within 50 km and n_mon = 75 → 69/75 = 92.0%
+# (Your numbers should now reflect this.)
+
+# --- B) (optional) % of SISALv3 sites within X km of any Monv1 (your original) ---
+# For each SISALv3 row, find nearest Monv1 (min across cols)
+min_sisal_to_mon_km <- apply(as.matrix(D_m), 1, min) / 1000
+
+n_sisal           <- nrow(sisal)
+n_sisal_within_25 <- sum(min_sisal_to_mon_km <= 25, na.rm = TRUE)
+n_sisal_within_50 <- sum(min_sisal_to_mon_km <= 50, na.rm = TRUE)
+
+pct_sisal_within_25 <- if (n_sisal > 0) round(100 * n_sisal_within_25 / n_sisal, 1) else NA_real_
+pct_sisal_within_50 <- if (n_sisal > 0) round(100 * n_sisal_within_50 / n_sisal, 1) else NA_real_
+
+# --- Neat summary table ---
+tibble::tibble(
   metric = c(
-    "SISAL_monv1 sites common to SISALv3 [%]",
-    "SISALv3 sites within 25 km of a Monv1 site [%]",
-    "SISALv3 sites within 50 km of a Monv1 site [%]",
-    "n_Monv1_sites",
-    "n_SISALv3_sites",
-    "n_common_monv1_site_ids",
-    "n_SISALv3_within_25km",
-    "n_SISALv3_within_50km"
+    "% Monv1 within 25 km of any SISALv3",
+    "% Monv1 within 50 km of any SISALv3",
+    "% SISALv3 within 25 km of any Monv1",
+    "% SISALv3 within 50 km of any Monv1"
   ),
-  value = c(
-    pct_mon_common_in_sisal,
-    pct_sisal_within_25,
-    pct_sisal_within_50,
-    n_mon,
-    n_sisal,
-    n_common,
-    within_25,
-    within_50
+  value = c(pct_mon_within_25, pct_mon_within_50,
+            pct_sisal_within_25, pct_sisal_within_50),
+  counts = c(
+    sprintf("%d/%d", n_mon_within_25, n_mon),
+    sprintf("%d/%d", n_mon_within_50, n_mon),
+    sprintf("%d/%d", n_sisal_within_25, n_sisal),
+    sprintf("%d/%d", n_sisal_within_50, n_sisal)
   )
-)
-print(summary_tbl, n = Inf)
-readr::write_csv(summary_tbl, file.path(outpath, "overlap_proximity_summary.csv"))
+) %>% print(n = Inf)
+
 
 # ---------- 3) Map: color SISALv3 by proximity class; DROP >50 km ----------
 # Proximity classes
