@@ -117,20 +117,32 @@ add_site_layers <- function(p) {
                       values = c("SISALv3" = COLZ[1], "SISAL_monv1" = COLZ[2], "both datasets" = COLZ[3]))
 }
 
+
+# ------------------------ Global + Insets -------------------------
+
+
 # ------------------------ Global + Insets -------------------------
 plot_global <- base_map() %>%
   add_site_layers() +
   theme(
-    legend.position = c(0.0, 0.00),
-    legend.justification = c(0, 0),
-    legend.box = "vertical",
-    axis.text = element_blank(),
+    legend.position       = c(0.02, 0.02),
+    legend.justification  = c(0, 0),
+    legend.box            = "vertical",
     legend.box.background = element_blank(),
-    legend.background = element_rect(colour = "black"),
-    panel.border = element_blank()
+    legend.background     = element_rect(colour = "black"),
+    panel.border          = element_blank(),
+    # keep outer margins minimal so A spans side-to-side
+    plot.margin           = margin(t = 0, r = 0, b = 0, l = 0),
+    
+    # make A's axes match B–D:
+    axis.title.x = element_text(size = 13, face = "bold"),
+    axis.title.y = element_text(size = 13, face = "bold"),
+    axis.text.x  = element_text(size = 18, face = "bold"),
+    axis.text.y  = element_text(size = 18, face = "bold"),
+    
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text  = element_text(size = 11, face = "bold")
   )
-
-
 
 # pretty labels
 lon_lab <- function(x) paste0(abs(x), "°", ifelse(x < 0, "W", "E"))
@@ -139,11 +151,11 @@ lat_lab <- function(y) paste0(abs(y), "°", ifelse(y < 0, "S", "N"))
 inset_theme <- theme(
   aspect.ratio = 1,
   legend.position = "none",
-  axis.title.x = element_text(size = rel(0.8)),
-  axis.title.y = element_text(size = rel(0.8)),
-  axis.text.x  = element_text(size = rel(0.8)),
-  axis.text.y  = element_text(size = rel(0.8)),  # <-- turn ON
-  plot.margin  = margin(t = 5.5, r = 6, b = 8, l = 24),  # extra left room
+  axis.title.x = element_text(size = 13, face = "bold"),
+  axis.title.y = element_text(size = 13, face = "bold"),
+  axis.text.x  = element_text(size = 11, face = "bold"),
+  axis.text.y  = element_text(size = 11, face = "bold"),
+  plot.margin  = margin(t = 5.5, r = 6, b = 8, l = 5.5),
   panel.border = element_blank()
 )
 
@@ -180,14 +192,14 @@ plot_EAsia <- base_map(xlim = c(95, 130), ylim = c(15, 45)) %>%
   labs(x = "Longitude [deg]", y = "Latitude [deg]") +
   inset_theme
 
-
-
 plot_map <- ggpubr::ggarrange(
   plot_global,
-  ggpubr::ggarrange(plot_NAm, plot_Europe, plot_EAsia, labels = c("B","C","D"), ncol = 3, heights = c(1,1)),
-  ncol = 1, nrow = 2, heights = c(1.3, 1), labels = c("A"),
-  common.legend = TRUE, legend = "bottom"
+  ggpubr::ggarrange(plot_NAm, plot_Europe, plot_EAsia,
+                    labels = c("B","C","D"), ncol = 3),
+  ncol = 1, nrow = 2, heights = c(2.5, 1), labels = c("A"),
+  common.legend = TRUE, legend = "bottom", align = "v"
 )
+
 
 ggsave(file.path(plotpath, "Fig1_map.pdf"), plot_map,
        width = 1.7*12, height = 1.7*8, units = "cm", dpi = 300)
@@ -293,42 +305,48 @@ climate_summary <- mon_region_long %>%
   group_by(classification) %>%
   summarise(total_sites = n_distinct(site_id), .groups = "drop")
 
+
 # ---- Palettes ----
-# 1) One consistent palette for both "Monitoring data by ..." bar charts (fill = type)
 TYPE_COLS <- c(
   "di.drip_iso_d18O_measurement.exists" = "#3B82F6",  # blue
   "mod_carb_d18O_measurement"           = "#10B981",  # green
   "drip_rate_measurement"               = "#F59E0B"   # amber
 )
 
-# 2) Different palette for the Region pie
 REGION_COLS <- setNames(viridis::magma(length(REGION_LEVELS), direction = -1),
                         REGION_LEVELS)
-
-# 3) Different palette for the Climate pie
 CLASS_COLS  <- setNames(viridis::cividis(length(CLASS_LEVELS)), CLASS_LEVELS)
 
-# ---- Wrappers to avoid tilted labels (keeps aspect identical across stacks) ----
+# ---- Wrappers ----
 region_lab <- function(x) str_replace(x, "North/Central America", "North/\nCentral America")
 class_lab  <- function(x) str_replace(x, "Dry sub-humid", "Dry\nsub-humid")
 
-HIST_THEME <- theme_minimal() +
+HIST_THEME <- theme_minimal(base_size = 13) +
   theme(
     plot.margin  = margin(6, 6, 16, 6),
-    axis.text.x  = element_text(size = rel(0.9),
-                                angle = 25, hjust = 1, vjust = 1),  # <-- tilt labels
-    axis.title.x = element_text(size = rel(0.95)),                  # title stays horizontal
-    axis.title.y = element_text(size = rel(0.95))
+    axis.text.x  = element_text(size = 12, angle = 75, hjust = 1, vjust = 1),
+    axis.text.y  = element_text(size = 12),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    plot.title   = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.title = element_text(size = 13, face = "bold"),
+    legend.text  = element_text(size = 12)
   )
 
+PIE_THEME <- theme(
+  plot.title  = element_text(size = 16, face = "bold", hjust = 0.5),
+  legend.text = element_text(size = 12)
+)
+
 # ------------------------ Plots -------------------------
-# A) Sites by region (pie) – distinct palette
+# A) Sites by region (pie)
 pie_region <- ggplot(region_summary, aes(x = "", y = total_sites, fill = region)) +
   geom_col() + coord_polar(theta = "y") + theme_void() +
   ggtitle("Sites by region") +
-  scale_fill_manual(values = REGION_COLS, limits = REGION_LEVELS, drop = FALSE, name = "")
+  scale_fill_manual(values = REGION_COLS, limits = REGION_LEVELS, drop = FALSE, name = "") +
+  PIE_THEME
 
-# B) Monitoring data by region (bars) – shared TYPE palette
+# B) Monitoring data by region (bars)
 hist_region <- mon_region_long %>%
   group_by(region, type) %>%
   summarise(n_sites = n_distinct(site_id), .groups = "drop") %>%
@@ -337,18 +355,26 @@ hist_region <- mon_region_long %>%
   ggtitle("Monitoring data by region") +
   labs(fill = "Data type", x = "Region", y = "Number of sites") +
   scale_x_discrete(labels = region_lab, drop = FALSE) +
-  scale_fill_manual(values = TYPE_COLS, limits = TYPE_LEVELS,
-                    labels = c("dripwater d18O","modern carbonate d18O","drip rate"),
-                    drop = FALSE) +
+  scale_fill_manual(
+    values = TYPE_COLS,
+    limits = TYPE_LEVELS,
+    labels = c(
+      expression("dripwater " * delta^{18} * O),
+      expression("modern carbonate " * delta^{18} * O),
+      expression("drip rate")
+    ),
+    drop = FALSE
+  ) +
   HIST_THEME
 
-# C) Sites by climate (pie) – distinct palette
+# C) Sites by climate (pie) – formatted like A
 pie_climate <- ggplot(climate_summary, aes(x = "", y = total_sites, fill = classification)) +
   geom_col() + coord_polar(theta = "y") + theme_void() +
   ggtitle("Sites by climate class") +
-  scale_fill_manual(values = CLASS_COLS, limits = CLASS_LEVELS, drop = FALSE, name = "")
+  scale_fill_manual(values = CLASS_COLS, limits = CLASS_LEVELS, drop = FALSE, name = "") +
+  PIE_THEME
 
-# D) Monitoring data by climate (bars) – shared TYPE palette
+# D) Monitoring data by climate (bars) – same legend formatting as B
 hist_climate <- mon_region_long %>%
   group_by(classification, type) %>%
   summarise(n_sites = n_distinct(site_id), .groups = "drop") %>%
@@ -357,17 +383,24 @@ hist_climate <- mon_region_long %>%
   ggtitle("Monitoring data by climate class") +
   labs(fill = "Data type", x = "Climate class", y = "Number of sites") +
   scale_x_discrete(labels = class_lab, drop = FALSE) +
-  scale_fill_manual(values = TYPE_COLS, limits = TYPE_LEVELS,
-                    labels = c("dripwater d18O","modern carbonate d18O","drip rate"),
-                    drop = FALSE) +
+  scale_fill_manual(
+    values = TYPE_COLS,
+    limits = TYPE_LEVELS,
+    labels = c(
+      expression("dripwater " * delta^{18} * O),
+      expression("modern carbonate " * delta^{18} * O),
+      expression("drip rate")
+    ),
+    drop = FALSE
+  ) +
   HIST_THEME
 
-# ---- Stacks with identical proportions ----
+# ---- Stacks ----
 region_plot  <- pie_region  / hist_region  + plot_layout(heights = c(1.5, 1))
 climate_plot <- pie_climate / hist_climate + plot_layout(heights = c(1.5, 1))
-
-# (Optional) export a single side-by-side canvas to guarantee matched layout
 fig3_side_by_side <- region_plot | climate_plot
+
+
 
 ggsave(file.path(plotpath, "Fig3_side_by_side.pdf"),
        fig3_side_by_side, width = 1.7*20, height = 1.7*12, units = "cm", dpi = 300)
