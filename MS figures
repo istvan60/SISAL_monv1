@@ -27,7 +27,7 @@ dir.create(plotpath, showWarnings = FALSE, recursive = TRUE)
 
 mon      <- readr::read_csv(file.path(datapath, "Monv1_sites.csv"), show_col_types = FALSE)
 sisalv3  <- readr::read_csv(file.path(datapath, "SISALv3_site.csv"), show_col_types = FALSE)
-combined <- readr::read_csv(file.path(datapath, "Records_sisalv2_and_monv1.csv"), show_col_types = FALSE)
+combined <- readr::read_csv(file.path(datapath, "Records_sisalv3_and_monv1.csv"), show_col_types = FALSE)
 aet_pet  <- readr::read_csv(file.path(datapath, "p_t_pet_aet.csv"), show_col_types = FALSE)
 
 # Ensure numeric lon/lat (robust to string columns)
@@ -135,13 +135,13 @@ plot_global <- base_map() %>%
     plot.margin           = margin(t = 0, r = 0, b = 0, l = 0),
     
     # make A's axes match B–D:
-    axis.title.x = element_text(size = 13, face = "bold"),
-    axis.title.y = element_text(size = 13, face = "bold"),
-    axis.text.x  = element_text(size = 18, face = "bold"),
-    axis.text.y  = element_text(size = 18, face = "bold"),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    axis.title.y = element_text(size = 15, face = "bold"),
+    axis.text.x  = element_text(size = 20, face = "bold"),
+    axis.text.y  = element_text(size = 20, face = "bold"),
     
-    legend.title = element_text(size = 12, face = "bold"),
-    legend.text  = element_text(size = 11, face = "bold")
+    legend.title = element_text(size = 14, face = "bold"),
+    legend.text  = element_text(size = 14, face = "bold")
   )
 
 # pretty labels
@@ -151,10 +151,10 @@ lat_lab <- function(y) paste0(abs(y), "°", ifelse(y < 0, "S", "N"))
 inset_theme <- theme(
   aspect.ratio = 1,
   legend.position = "none",
-  axis.title.x = element_text(size = 13, face = "bold"),
-  axis.title.y = element_text(size = 13, face = "bold"),
-  axis.text.x  = element_text(size = 11, face = "bold"),
-  axis.text.y  = element_text(size = 11, face = "bold"),
+  axis.title.x = element_text(size = 19, face = "bold"),
+  axis.title.y = element_text(size = 19, face = "bold"),
+  axis.text.x  = element_text(size = 15, face = "bold"),
+  axis.text.y  = element_text(size = 15, face = "bold"),
   plot.margin  = margin(t = 5.5, r = 6, b = 8, l = 5.5),
   panel.border = element_blank()
 )
@@ -196,7 +196,7 @@ plot_map <- ggpubr::ggarrange(
   plot_global,
   ggpubr::ggarrange(plot_NAm, plot_Europe, plot_EAsia,
                     labels = c("B","C","D"), ncol = 3),
-  ncol = 1, nrow = 2, heights = c(2.5, 1), labels = c("A"),
+  ncol = 1, nrow = 2, heights = c(2.5, 2), labels = c("A"),
   common.legend = TRUE, legend = "bottom", align = "v"
 )
 
@@ -244,10 +244,10 @@ mon_region <- mon %>%
 # ---- Aridity index by site (mean of yearly P/PET) ----
 annual_sums <- aet_pet %>%
   mutate(site_id = as.character(site_id)) %>%
-  group_by(site_id, year) %>%
+  group_by(site_id, product_yyyy) %>%
   summarise(
-    total_P   = sum(precipitation, na.rm = TRUE),
-    total_PET = sum(PET,           na.rm = TRUE),
+    total_P   = sum(product_precip, na.rm = TRUE),
+    total_PET = sum(product_pet,           na.rm = TRUE),
     .groups   = "drop"
   )
 
@@ -276,14 +276,15 @@ CLASS_LEVELS  <- c("Humid","Dry sub-humid","Semi-arid","Arid","Hyper arid","Othe
 TYPE_LEVELS   <- flag_cols
 
 mon_region2 <- mon_region %>%
-  left_join(AI_groups, by = "site_id") %>%
+  mutate(site_id = as.double(site_id)) %>%  # Ensure site_id in mon_region is double
+  left_join(AI_groups %>% mutate(site_id = as.double(site_id)), by = "site_id") %>% 
   mutate(
     region         = coalesce(region, "Other"),
     classification = coalesce(classification, "Other"),
-    region         = factor(region,         levels = REGION_LEVELS),
+    region         = factor(region, levels = REGION_LEVELS),
     classification = factor(classification, levels = CLASS_LEVELS)
   ) %>%
-  # coerce any weird truthy values in flags to strict 0/1
+  # Coerce any weird truthy values in flags to strict 0/1
   mutate(across(all_of(flag_cols),
                 ~ as.integer(. %in% c(1, "1", TRUE, "TRUE", "true")), .names = "{.col}"))
 
@@ -529,3 +530,4 @@ tibble::tibble(
     sprintf("%d/%d", n_sisal_within_50, n_sisal)
   )
 ) %>% print(n = Inf)
+
