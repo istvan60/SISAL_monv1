@@ -421,99 +421,65 @@ ggsave(file.path(plotpath, "Fig3_climate.png"), climate_plot,
 # ------------------------ Distances: SISAL vs MON within X km -------------------------
 # Use geodist (fast; Haversine default). Alternatively: sf::st_distance with s2 geodesics.
 
+library(geosphere)
+library(dplyr)
 
-# --- Overlap & proximity + map (drop >50 km) ---
-# Inputs:
-#   - mon     <- read_csv("input/Monv1_sites_.csv")
-#   - sisal   <- sisalv3   # already in memory
-#   - mapping <- combined  # already in memory
-
-suppressPackageStartupMessages({
-  library(readr)
-  library(dplyr)
-  library(geodist)
-  library(tibble)
-  library(sf)
-  library(ggplot2)
-  library(viridis)
-  library(rnaturalearth)
-  library(rnaturalearthdata)
-  library(stringr)
-})
-
-datapath <- "input"
-outpath  <- "output"
-dir.create(outpath, showWarnings = FALSE, recursive = TRUE)
-
-# ---------- Load Monv1 (explicit CSV), use your in-memory sisal/mapping ----------
-numify <- function(x) suppressWarnings(as.numeric(x))
-
-mon <- read_csv(file.path(datapath, "Monv1_sites.csv"), show_col_types = FALSE) %>%
-  transmute(
-    site_id   = as.character(site_id),
-    latitude  = numify(latitude),
-    longitude = numify(longitude)
-  ) %>%
-  distinct(site_id, .keep_all = TRUE) %>%
-  filter(is.finite(latitude), is.finite(longitude))
-
-sisal <- sisalv3 %>%   # from sisalv3
-  transmute(
-    site_id   = as.character(site_id),
-    latitude  = numify(latitude),
-    longitude = numify(longitude)
-  ) %>%
-  distinct(site_id, .keep_all = TRUE) %>%
-  filter(is.finite(latitude), is.finite(longitude))
-
-# ---------- 1) Overlap: % of Monv1 sites that are also in SISALv3 ----------
-# Use the explicit mapping table (combined) that links monv1.site_id <-> sisalv3.site_id
-n_mon <- dplyr::n_distinct(mon$site_id)
-
-mapping<-combined
-
-n_common <- mapping %>%
-  filter(!is.na(`monv1.site_id`), !is.na(`sisalv3.site_id`)) %>%
-  summarise(n = n_distinct(`monv1.site_id`), .groups = "drop") %>%
-  pull(n)
-n_common <- ifelse(length(n_common) == 0, 0L, n_common)
-
-pct_mon_common_in_sisal <- if (n_mon > 0) round(100 * n_common / n_mon, 1) else NA_real_
-
-# ---------- 2) Proximity: % of SISALv3 within 25/50 km of any Monv1 ----------
-# Great-circle distances (Haversine); rows = SISALv3, cols = Monv1
-D_m <- geodist::geodist(
-  x = sisal %>% dplyr::select(longitude, latitude),
-  y = mon   %>% dplyr::select(longitude, latitude),
-  paired = FALSE, measure = "haversine"
+# Reduce dataframes to include only coordinates
+sisal.coords <- data.frame(
+  site_id   = sisal$site_id,
+  latitude  = sisal$latitude,
+  longitude = sisal$longitude
 )
 
-# --- A) % of Monv1 sites within X km of any SISALv3 site (what you want) ---
-# For each Monv1 column, find nearest SISALv3 (min across rows)
-min_mon_to_sisal_km <- apply(as.matrix(D_m), 2, min) / 1000
+mon.coords <- data.frame(
+  site_id   = mon$site_id,
+  latitude  = mon$latitude,
+  longitude = mon$longitude
+)
 
-n_mon          <- nrow(mon)
-n_mon_within_25 <- sum(min_mon_to_sisal_km <= 25, na.rm = TRUE)
-n_mon_within_50 <- sum(min_mon_to_sisal_km <= 50, na.rm = TRUE)
+# Generate combinations of points (pairing each SISAL site with each MON site)
+pairs <- merge(sisal.coords, mon.coords, by = NULL, suffixes = c("_sisal", "_mon"))
 
+# Calculate distance between the points in meters using the Haversine formula
+pairs$distance_m <- distHaversine(
+  cbind(pairs$longitude_sisal, pairs$latitude_sisal),
+  cbind(pairs$longitude_mon,   pairs$latitude_mon)
+)
+
+# Convert distance into kilometers
+pairs$distance_km <- pairs$distance_m / 1000 
+
+# Filter number of Monv1 sites that are within 25 km of a SISALv3 site
+dist25_mon <- pairs %>% filter(distance_km <= 25)
+# Filter number of Monv1 sites that are within 50 km of a SISALv3 site
+dist50_mon <- pairs %>% filter(distance_km <= 50)
+
+# Filter number of SISALv3 sites that are within 25 km of a Monv1 site
+dist25_sisal <- pairs %>% filter(distance_km <= 25)
+# Filter number of SISALv3 sites that are within 50 km of a Monv1 site
+dist50_sisal <- pairs %>% filter(distance_km <= 50)
+
+# Metrics Calculation
+
+# 1) % Monv1 within 25 km of any SISALv3
+n_mon <- nrow(mon)
+n_mon_within_25 <- length(unique(dist25_mon$site_id_mon)) # Unique Mon sites within 25 km of any SISALv3
 pct_mon_within_25 <- if (n_mon > 0) round(100 * n_mon_within_25 / n_mon, 1) else NA_real_
+
+# 2) % Monv1 within 50 km of any SISALv3
+n_mon_within_50 <- length(unique(dist50_mon$site_id_mon)) # Unique Mon sites within 50 km of any SISALv3
 pct_mon_within_50 <- if (n_mon > 0) round(100 * n_mon_within_50 / n_mon, 1) else NA_real_
 
-# Example: if 69 within 50 km and n_mon = 75 → 69/75 = 92.0%
-# (Your numbers should now reflect this.)
-
-# --- B) (optional) % of SISALv3 sites within X km of any Monv1 (your original) ---
-# For each SISALv3 row, find nearest Monv1 (min across cols)
-min_sisal_to_mon_km <- apply(as.matrix(D_m), 1, min) / 1000
-
-n_sisal           <- nrow(sisal)
-n_sisal_within_25 <- sum(min_sisal_to_mon_km <= 25, na.rm = TRUE)
-n_sisal_within_50 <- sum(min_sisal_to_mon_km <= 50, na.rm = TRUE)
-
+# 3) % SISALv3 within 25 km of any Monv1
+n_sisal <- nrow(sisal)
+n_sisal_within_25 <- length(unique(dist25_sisal$site_id_sisal)) # Unique SISAL sites within 25 km of any Monv1
 pct_sisal_within_25 <- if (n_sisal > 0) round(100 * n_sisal_within_25 / n_sisal, 1) else NA_real_
+
+# 4) % SISALv3 within 50 km of any Monv1
+n_sisal_within_50 <- length(unique(dist50_sisal$site_id_sisal)) # Unique SISAL sites within 50 km of any Monv1
 pct_sisal_within_50 <- if (n_sisal > 0) round(100 * n_sisal_within_50 / n_sisal, 1) else NA_real_
 
-# --- Neat summary table ---
+# Create summary table
 tibble::tibble(
   metric = c(
     "% Monv1 within 25 km of any SISALv3",
