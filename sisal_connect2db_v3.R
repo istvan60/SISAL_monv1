@@ -254,11 +254,13 @@ openxlsx::write.xlsx(
     site_summary       = site_summary,
     drip_iso_example   = drip_iso_df,
     drip_rate_example  = drip_rate_df,
-    refs = site_refs_siteonly
+    precip_example     = precip_df,
+    refs               = site_refs_siteonly
   ),
   file = out_xlsx,
   overwrite = TRUE
 )
+
 
 cat("Wrote Excel file:", normalizePath(out_xlsx), "\n")
 
