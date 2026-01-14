@@ -172,31 +172,31 @@ precip_df <- dbGetQuery(
 
 
 #3.4 # SQL query to fetch references for a given site.
-site_entity_counts_sql <- " 
-SELECT s.site_id, s.site_name, s.latitude, 
-s.longitude, s.elevation, 
-COUNT(DISTINCT cem.cave_entity_id) AS cave_entity_count, 
-COUNT(DISTINCT dem.drip_entity_id) AS drip_entity_count, 
-COUNT(DISTINCT pem.precip_entity_id) AS precip_entity_count, 
-( COUNT(DISTINCT cem.cave_entity_id) + 
-COUNT(DISTINCT dem.drip_entity_id) + 
-COUNT(DISTINCT pem.precip_entity_id) ) 
-AS entity_count FROM site s 
-LEFT JOIN cave_entity cem ON cem.site_id = s.site_id 
-LEFT JOIN drip_entity dem ON dem.site_id = s.site_id 
-LEFT JOIN site_link_precip slp ON slp.site_id = s.site_id -- 
-Correct join LEFT JOIN precip_entity pem ON pem.precip_entity_id = slp.precip_entity_id -- 
-Correct join GROUP BY s.site_id, s.site_name, s.latitude, s.longitude, s.elevation ORDER BY s.site_id; 
+site_entity_counts_sql <- "
+SELECT
+  s.site_id, s.site_name, s.latitude, s.longitude, s.elevation,
+  COUNT(DISTINCT cem.cave_entity_id)   AS cave_entity_count,
+  COUNT(DISTINCT dem.drip_entity_id)   AS drip_entity_count,
+  COUNT(DISTINCT pem.precip_entity_id) AS precip_entity_count,
+  ( COUNT(DISTINCT cem.cave_entity_id)
+  + COUNT(DISTINCT dem.drip_entity_id)
+  + COUNT(DISTINCT pem.precip_entity_id) ) AS entity_count
+FROM site s
+LEFT JOIN cave_entity  cem ON cem.site_id = s.site_id
+LEFT JOIN drip_entity  dem ON dem.site_id = s.site_id
+LEFT JOIN site_link_precip      slp ON slp.site_id = s.site_id
+LEFT JOIN precip_entity pem ON pem.precip_entity_id = slp.precip_entity_id
+GROUP BY s.site_id, s.site_name, s.latitude, s.longitude, s.elevation
+ORDER BY s.site_id;
 "
-
-
 site_summary <- dbGetQuery(con, site_entity_counts_sql)
+
 
 
 #3.5 # SQL query to fetch all metadata for a given bounding box given in lat and lon
 #Given variables can be left out.
 
-Global_metadata_sql <- "
+Global_sql <- "
 SELECT DISTINCT s.site_name, s.site_id, 
 precip.precip_site_id,
 precip.precip_site_name, 
@@ -215,9 +215,9 @@ and s.longitude between -180 and 180
 "
 
 
-Global_metadata_df <- dbGetQuery(
+Global_df <- dbGetQuery(
   con,
-  sqlInterpolate(con, Global_metadata_sql)
+  sqlInterpolate(con, Global_sql)
 )
 
 
@@ -254,13 +254,11 @@ openxlsx::write.xlsx(
     site_summary       = site_summary,
     drip_iso_example   = drip_iso_df,
     drip_rate_example  = drip_rate_df,
-    precip_example     = precip_df,
-    refs               = site_refs_siteonly
+    refs = site_refs_siteonly
   ),
   file = out_xlsx,
   overwrite = TRUE
 )
-
 
 cat("Wrote Excel file:", normalizePath(out_xlsx), "\n")
 
