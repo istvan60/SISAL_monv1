@@ -71,25 +71,29 @@ hhmm_to_hm <- function(hhmm) {
   list(h = h, m = m)
 }
 
-make_dt <- function(yyyy, mm, dd, hhmm = NULL, tz = "UTC") {
-  ifelse(
-    is.na(yyyy),
-    as.POSIXct(NA),
-    {
-      mm2 <- ifelse(is.na(mm), 6, mm)
-      dd2 <- ifelse(is.na(dd), 15, dd)
-      
-      if (is.null(hhmm)) {
-        hh2 <- 12; mi2 <- 0
-      } else {
-        hm <- hhmm_to_hm(hhmm)
-        hh2 <- hm$h; mi2 <- hm$m
-      }
-      
-      as.POSIXct(sprintf("%04d-%02d-%02d %02d:%02d:00", yyyy, mm2, dd2, hh2, mi2), tz = tz)
-    }
-  )
+# --- SAFE datetime maker (vectorized) ---
+make_dt <- function(yyyy, mm = NA, dd = NA, hhmm = NA,
+                    tz = "UTC",
+                    default_mm = 6, default_dd = 15, default_hhmm = 1200) {
+  
+  # if year missing -> NA
+  out <- rep(as.POSIXct(NA), length(yyyy))
+  ok  <- !is.na(yyyy)
+  
+  mm2   <- ifelse(is.na(mm),   default_mm,   mm)
+  dd2   <- ifelse(is.na(dd),   default_dd,   dd)
+  hhmm2 <- ifelse(is.na(hhmm), default_hhmm, hhmm)
+  
+  hh <- floor(hhmm2 / 100)
+  mi <- hhmm2 %% 100
+  
+  # build ISO string
+  x <- sprintf("%04d-%02d-%02d %02d:%02d:00", yyyy, mm2, dd2, hh, mi)
+  
+  out[ok] <- as.POSIXct(x[ok], tz = tz, format = "%Y-%m-%d %H:%M:%S")
+  out
 }
+
 
 classify_freq <- function(unit, time) {
   unit <- tolower(unit)
@@ -216,6 +220,7 @@ mod_carb_site_flags <- drip_entity %>%
     .groups = "drop"
   )
 
+
 precip_site_flags <- site_link_precip %>%
   inner_join(precip_sample, by = "precip_entity_id") %>%
   group_by(site_id) %>%
@@ -225,7 +230,7 @@ precip_site_flags <- site_link_precip %>%
     has_precip_d2H    = any(!is.na(precip_d2H_measurement)),
     has_precip_anyiso = any(!is.na(precip_d18O_measurement) | !is.na(precip_d2H_measurement)),
     .groups = "drop"
-  )
+  ) #Warning message: In inner_join(., precip_sample, by = "precip_entity_id") :  Detected an unexpected many-to-many relationship between `x` and `y`.
 
 site_data_counts <- site %>%
   select(site_id) %>%
@@ -279,26 +284,37 @@ library(ggplot2)
 library(dplyr)
 library(ggmap)
 
-# Prepare your map data for each type of site
-# 1) Sites with Drip Isotope Data
+
+########################################################
+# 8.1) Actually “Map tables”: all sites with each data type
+#      + Global map + 3 zoomed regional maps
+#      - Drip Iso: hollow BLUE triangle
+#      - Drip Rate: hollow ORANGE square
+#      - Mod Carb: slightly smaller FILLED red dot
+#      - Precip: BLACK cross
+#      - legends on ALL plots
+########################################################
+
+library(ggplot2)
+library(dplyr)
+library(maps)
+
+# ---- Build map tables ----
 sites_drip_iso_map <- site %>%
   inner_join(drip_iso_site_flags %>% filter(has_drip_iso_any), by = "site_id") %>%
   select(site_id, site_name, latitude, longitude, elevation)
 
-# 2) Sites with Drip Rate Data
 sites_drip_rate_map <- site %>%
   inner_join(drip_rate_site_flags %>% filter(has_drip_rate), by = "site_id") %>%
   select(site_id, site_name, latitude, longitude, elevation)
 
-# 3) Sites with Modern Carbonate Data
 sites_mod_carb_map <- site %>%
   inner_join(mod_carb_site_flags %>% filter(has_mod_carb_any), by = "site_id") %>%
   select(site_id, site_name, latitude, longitude, elevation)
 
-# 4) Sites with Precipitation Data
 site_precip_map <- site %>%
   inner_join(site_link_precip, by = "site_id") %>%
-  left_join(precip_site, by = "precip_site_id") %>%
+  left_join(precip_site,  by = "precip_site_id") %>%
   left_join(precip_entity, by = "precip_entity_id") %>%
   select(
     site_id, site_name, latitude, longitude, elevation,
@@ -307,34 +323,150 @@ site_precip_map <- site %>%
   ) %>%
   distinct()
 
-# Merge all maps for visualization
+# ---- Combine (deduplicate within each layer) ----
 combined_sites <- bind_rows(
-  mutate(sites_drip_iso_map, data_type = "Drip Iso"),
-  mutate(sites_drip_rate_map, data_type = "Drip Rate"),
-  mutate(sites_mod_carb_map, data_type = "Mod Carb"),
-  mutate(site_precip_map, data_type = "Precip")
+  mutate(distinct(sites_drip_iso_map,  site_id, .keep_all = TRUE), data_type = "Drip Iso"),
+  mutate(distinct(sites_drip_rate_map, site_id, .keep_all = TRUE), data_type = "Drip Rate"),
+  mutate(distinct(sites_mod_carb_map,  site_id, .keep_all = TRUE), data_type = "Mod Carb"),
+  mutate(distinct(site_precip_map,     site_id, .keep_all = TRUE), data_type = "Precip")
 )
 
-# Plot using ggplot2
-ggplot(data = combined_sites, aes(x = longitude, y = latitude, color = data_type)) +
-  borders("world", colour = "gray85", fill = "gray95") +
-  geom_point(aes(size = elevation), alpha = 0.6) + 
-  scale_color_manual(values = c("Drip Iso" = "blue", "Drip Rate" = "green", 
-                                "Mod Carb" = "red", "Precip" = "purple")) +
-  labs(title = "Site Locations with Different Data Types",
-       subtitle = "Each color represents different data type (Drip Iso, Drip Rate, Mod Carb, Precip)",
-       x = "Longitude", y = "Latitude") +
-  theme_minimal() +
-  theme(legend.position = "right")
+# Split for layered plotting (to allow Mod Carb smaller + filled)
+combined_hollow <- combined_sites %>% filter(data_type %in% c("Drip Iso", "Drip Rate"))
+combined_modcarb <- combined_sites %>% filter(data_type == "Mod Carb")
+combined_precip <- combined_sites %>% filter(data_type == "Precip")
 
-# If you want a more interactive map, you can use leaflet:
-# library(leaflet)
-# leaflet(data = combined_sites) %>%
-#   addTiles() %>%
-#   addCircleMarkers(~longitude, ~latitude, color = ~data_type, 
-#                    popup = ~paste(site_name, data_type), radius = 5)
+# ---- Aesthetics ----
+type_colors <- c(
+  "Drip Iso"  = "blue",
+  "Drip Rate" = "green",
+  "Mod Carb"  = "red",
+  "Precip"    = "black"
+)
 
+type_shapes <- c(
+  "Drip Iso"  = 2,   # hollow triangle
+  "Drip Rate" = 0,   # hollow square
+  "Mod Carb"  = 16,  # filled circle (dot)
+  "Precip"    = 4    # cross
+)
 
+marker_stroke <- 0.35
+size_default  <- 2.6
+size_modcarb  <- 2.1   # a bit smaller than before
+
+# ---- Helpers for formatting axes ----
+lon_lab <- function(x) ifelse(x < 0, paste0(abs(x), "°W"), paste0(x, "°E"))
+lat_lab <- function(x) ifelse(x < 0, paste0(abs(x), "°S"), paste0(x, "°N"))
+
+# ---- Base map function ----
+base_map <- function(xlim = c(-180, 180), ylim = c(-60, 85)) {
+  ggplot() +
+    borders("world", colour = "gray85", fill = "gray95") +
+    coord_quickmap(xlim = xlim, ylim = ylim, expand = FALSE) +
+    theme_minimal() +
+    theme(
+      legend.position = "right",
+      legend.title = element_text(size = 10),
+      legend.text  = element_text(size = 9)
+    )
+}
+
+add_site_layers <- function(p) {
+  p +
+    # Hollow layers (Drip Iso, Drip Rate)
+    geom_point(
+      data = combined_hollow,
+      aes(x = longitude, y = latitude, colour = data_type, shape = data_type),
+      size = size_default,
+      stroke = marker_stroke,
+      alpha = 0.9
+    ) +
+    # Mod Carb: smaller FILLED red dot
+    geom_point(
+      data = combined_modcarb,
+      aes(x = longitude, y = latitude, colour = data_type, shape = data_type),
+      size = size_modcarb,
+      stroke = 0,
+      alpha = 0.9
+    ) +
+    # Precip: black cross
+    geom_point(
+      data = combined_precip,
+      aes(x = longitude, y = latitude, colour = data_type, shape = data_type),
+      size = size_default,
+      stroke = marker_stroke,
+      alpha = 0.9
+    ) +
+    scale_colour_manual(values = type_colors, name = "Data type") +
+    scale_shape_manual(values = type_shapes, name = "Data type")
+}
+
+# ---- Global map ----
+plot_global <- base_map(xlim = c(-180, 180), ylim = c(-60, 85)) |>
+  add_site_layers() +
+  labs(
+    title = "Site locations with different data types (flat CSV)",
+    subtitle = "Hollow: Drip Iso / Drip Rate; Filled: Mod Carb; Cross: Precip",
+    x = "Longitude [deg]",
+    y = "Latitude [deg]"
+  ) +
+  scale_x_continuous(breaks = seq(-180, 180, by = 60), labels = lon_lab) +
+  scale_y_continuous(breaks = seq(-60,  80,  by = 20), labels = lat_lab)
+
+# ---- Zoomed regions ----
+inset_theme <- theme(legend.position = "right")
+
+# North America
+plot_NAm <- base_map(xlim = c(-140, -50), ylim = c(0, 60)) |>
+  add_site_layers() +
+  scale_x_continuous(
+    breaks = seq(-140, -50, by = 20),
+    labels = lon_lab,
+    guide  = guide_axis(angle = 30)
+  ) +
+  scale_y_continuous(
+    breaks = seq(0, 60, by = 10),
+    labels = lat_lab
+  ) +
+  labs(x = "Longitude [deg]", y = "Latitude [deg]", title = "North America") +
+  inset_theme
+
+# Europe
+plot_Europe <- base_map(xlim = c(-10, 30), ylim = c(30, 70)) |>
+  add_site_layers() +
+  scale_x_continuous(
+    breaks = seq(-10, 30, by = 10),
+    labels = lon_lab,
+    guide  = guide_axis(angle = 30)
+  ) +
+  scale_y_continuous(
+    breaks = seq(30, 70, by = 10),
+    labels = lat_lab
+  ) +
+  labs(x = "Longitude [deg]", y = "Latitude [deg]", title = "Europe") +
+  inset_theme
+
+# East Asia
+plot_EAsia <- base_map(xlim = c(95, 130), ylim = c(15, 45)) |>
+  add_site_layers() +
+  scale_x_continuous(
+    breaks = seq(95, 130, by = 10),
+    labels = lon_lab,
+    guide  = guide_axis(angle = 30)
+  ) +
+  scale_y_continuous(
+    breaks = seq(15, 45, by = 10),
+    labels = lat_lab
+  ) +
+  labs(x = "Longitude [deg]", y = "Latitude [deg]", title = "East Asia") +
+  inset_theme
+
+# ---- Print plots ----
+plot_global
+plot_NAm
+plot_Europe
+plot_EAsia
 
 
 
@@ -387,12 +519,19 @@ mod_carb_records <- drip_entity %>%
   left_join(site_citations, by = "site_id") %>%
   left_join(drip_entity_citations, by = "drip_entity_id") %>%
   mutate(
-    start_dt = make_dt(mod_carb_start_yyyy, mod_carb_start_mm, mod_carb_start_dd, mod_carb_start_hhmm),
-    end_dt   = make_dt(mod_carb_end_yyyy,   mod_carb_end_mm,   mod_carb_end_dd,   mod_carb_end_hhmm),
-    end_dt   = ifelse(is.na(end_dt), start_dt, end_dt),
+    # If only year exists, interpret as full-year coverage:
+    start_dt = make_dt(mod_carb_start_yyyy, mod_carb_start_mm, mod_carb_start_dd,
+                       default_mm = 1, default_dd = 1, default_hhmm = 0),
+    end_dt   = make_dt(mod_carb_end_yyyy,   mod_carb_end_mm,   mod_carb_end_dd,
+                       default_mm = 12, default_dd = 31, default_hhmm = 2359),
+    
+    # IMPORTANT: use if_else (not ifelse) to preserve POSIXct class
+    end_dt = dplyr::if_else(is.na(end_dt), start_dt, end_dt),
+    
     freq_class = classify_freq(mod_carb_accumulation_unit, mod_carb_accumulation_time)
   ) %>%
   arrange(site_id, drip_entity_id, start_dt)
+
 
 ########################################################
 # 11) # Filter records with SISAL entities (site_id < 1000)
@@ -481,73 +620,7 @@ precip_freq_by_entity <- precip_sample %>%
   slice_max(order_by = n, n = 1, with_ties = FALSE) %>%
   ungroup()
 
-########################################################
-# 15) Time-overlapping precip isotope and drip water isotope records
-########################################################
-
-drip_iso_records <- drip_entity %>%
-  select(site_id, drip_entity_id, drip_entity_name) %>%
-  inner_join(drip_iso_sample, by = "drip_entity_id") %>%
-  mutate(
-    drip_start = make_dt(drip_iso_start_yyyy, drip_iso_start_mm, drip_iso_start_dd, drip_iso_start_hhmm),
-    drip_end   = make_dt(drip_iso_end_yyyy,   drip_iso_end_mm,   drip_iso_end_dd,   drip_iso_end_hhmm),
-    drip_end   = ifelse(is.na(drip_end), drip_start, drip_end),
-    drip_d_excess = drip_iso_d2H_measurement - 8 * drip_iso_d18O_measurement
-  ) %>%
-  filter(!is.na(drip_start), !is.na(drip_end)) %>%
-  filter(!is.na(drip_iso_d18O_measurement) | !is.na(drip_iso_d2H_measurement))
-
-precip_iso_records <- site_link_precip %>%
-  left_join(precip_site, by = "precip_site_id") %>%
-  left_join(precip_entity, by = "precip_entity_id") %>%
-  inner_join(precip_sample, by = "precip_entity_id") %>%
-  mutate(
-    precip_start = make_dt(precip_start_yyyy, precip_start_mm, precip_start_dd, precip_start_hhmm),
-    precip_end   = make_dt(precip_end_yyyy,   precip_end_mm,   precip_end_dd,   precip_end_hhmm),
-    precip_end   = ifelse(is.na(precip_end), precip_start, precip_end),
-    precip_d_excess = precip_d2H_measurement - 8 * precip_d18O_measurement
-  ) %>%
-  filter(!is.na(precip_start), !is.na(precip_end)) %>%
-  filter(!is.na(precip_d18O_measurement) | !is.na(precip_d2H_measurement))
-
-common_sites <- intersect(unique(drip_iso_records$site_id), unique(precip_iso_records$site_id))
-
-overlap_precip_drip_iso <- bind_rows(lapply(common_sites, function(sid) {
-  d1 <- drip_iso_records %>% filter(site_id == sid)
-  p1 <- precip_iso_records %>% filter(site_id == sid)
-  
-  tmp <- merge(d1, p1, by = NULL)  # cross join within site
-  
-  tmp %>%
-    filter(drip_start <= precip_end & drip_end >= precip_start)
-})) %>%
-  left_join(site, by = "site_id") %>%
-  left_join(site_notes, by = "site_id") %>%
-  left_join(site_citations, by = "site_id") %>%
-  left_join(drip_entity_citations, by = "drip_entity_id") %>%
-  left_join(precip_entity_citations, by = "precip_entity_id") %>%
-  select(
-    site_id, site_name, latitude, longitude, elevation,
-    notes,
-    site_citations, site_DOI,
-    drip_entity_id, drip_entity_name, drip_citations, drip_DOI,
-    drip_start, drip_end,
-    drip_iso_d18O_measurement, drip_iso_d2H_measurement, drip_d_excess,
-    precip_site_id, precip_site_name, precip_latitude, precip_longitude, precip_elevation,
-    precip_entity_id, precip_entity_name, precip_method, precip_citations, precip_DOI,
-    precip_start, precip_end,
-    precip_amount, precip_d18O_measurement, precip_d2H_measurement, precip_d_excess
-  ) %>%
-  arrange(site_id, drip_entity_id, precip_entity_id, precip_start, drip_start)
 
 ########################################################
-# END: key outputs in memory:
-# site_summary
-# site_data_counts
-# sites_drip_iso_map, sites_drip_rate_map, sites_mod_carb_map, site_precip_map
-# overlap_precip_drip_iso
-# mod_carb_records
-# records_with_sisal_entities
-# full_year_both
-# drip_*_presence_global, precip_presence_global
+# END
 ########################################################
