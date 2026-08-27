@@ -1,9 +1,29 @@
 install.packages(c("tidyverse","sf","rnaturalearth","rnaturalearthdata",
-                   "ggpubr","patchwork","viridis","geodist","readr"))
+                   "ggpubr","patchwork","viridis","geodist","readr","geosphere"))
 
 
 # --- SISAL monitoring plots (modernized: sf + rnaturalearth; no rgdal) ---
-# Original author: Franziska Lechleitner (with ChatGPT); updated 2025-11-10
+# Original author: Franziska Lechleitner ; updated 2025-11-10
+#
+# REQUIRED INPUT FILES (place in an "input/" folder next to this script):
+#   - Monv1_sites.csv               site_id, site_name, latitude, longitude,
+#                                    elevation, and the three monitoring-type
+#                                    flag columns (di.drip_iso_d18O_measurement
+#                                    exists, mod_carb_d18O_measurement,
+#                                    drip_rate_measurement)
+#   - SISALv3_site.csv               SISALv3 site_id, latitude, longitude
+#   - Records_sisalv3_and_monv1.csv  sisalv3.latitude, sisalv3.longitude for
+#                                    sites present in both SISALv3 and Monv1
+#   - p_t_pet_aet.csv                site_id, product_yyyy, product_mm,
+#                                    product_precip, product_pet (used to
+#                                    compute the Aridity Index for Fig 3)
+#   - wokam_final_WGS84.shp          optional -- WOKAM karst polygons, in
+#     (+ .dbf/.shx/.prj)             input/ or input/wokam/; the map still
+#                                    renders without it, just without the
+#                                    karst overlay
+#
+# OUTPUT: writes Fig1_map and Fig3_side_by_side/region/climate (.pdf + .png)
+# to an "output/" folder next to this script (created automatically).
 
 suppressPackageStartupMessages({
   library(tidyverse)
@@ -55,17 +75,17 @@ WOKAM_CRS_EPSG <- 4326  # set to the correct EPSG if you know it differs
 wokam_sf <- tryCatch({
   if (length(wokam_path) == 0) stop("WOKAM shapefile not found")
   x <- sf::st_read(wokam_path, quiet = TRUE)
-  
+
   # If the shapefile has no CRS, set it explicitly (assume WGS84 by default)
   if (is.na(sf::st_crs(x))) {
     message("WOKAM: missing CRS; assuming EPSG:", WOKAM_CRS_EPSG, " (WGS84).")
     sf::st_crs(x) <- WOKAM_CRS_EPSG
   }
-  
+
   # Clean geometry just in case; drop Z/M and fix invalids
   x <- sf::st_zm(x, drop = TRUE, what = "ZM")
   x <- suppressWarnings(sf::st_make_valid(x))
-  
+
   # Transform to WGS84 for plotting (no-op if already 4326)
   x <- sf::st_transform(x, 4326)
   x
@@ -133,13 +153,13 @@ plot_global <- base_map() %>%
     panel.border          = element_blank(),
     # keep outer margins minimal so A spans side-to-side
     plot.margin           = margin(t = 0, r = 0, b = 0, l = 0),
-    
+
     # make A's axes match B–D:
     axis.title.x = element_text(size = 15, face = "bold"),
     axis.title.y = element_text(size = 15, face = "bold"),
     axis.text.x  = element_text(size = 20, face = "bold"),
     axis.text.y  = element_text(size = 20, face = "bold"),
-    
+
     legend.title = element_text(size = 14, face = "bold"),
     legend.text  = element_text(size = 14, face = "bold")
   )
@@ -255,6 +275,10 @@ annual_AI <- annual_sums %>%
   filter(is.finite(total_PET), total_PET > 0) %>%
   mutate(AI = total_P / total_PET)
 
+
+#mean_AI_per_site <- rbind(mean_AI_per_site, c(232, 0.7))
+#mean_AI_per_site <- rbind(mean_AI_per_site, c(67, 0.7))
+
 mean_AI_per_site <- annual_AI %>%
   group_by(site_id) %>%
   summarise(mean_AI = mean(AI, na.rm = TRUE), .groups = "drop")
@@ -275,9 +299,22 @@ REGION_LEVELS <- c("Europe","North/Central America","South America","Africa",
 CLASS_LEVELS  <- c("Humid","Dry sub-humid","Semi-arid","Arid","Hyper arid","Other")
 TYPE_LEVELS   <- flag_cols
 
+# Levels actually shown in the Fig 3 legends/axes: Africa, Middle East and region
+# "Other" currently have zero monitored sites, as do the Arid and Hyper arid climate
+# classes, so they're dropped from the plots rather than displayed empty (see the
+# data-paucity captions attached to region_plot/climate_plot/fig3_side_by_side below).
+# Climate "Other" is kept — it holds 2 real sites lacking p_t_pet_aet.csv coverage.
+REGION_LEVELS_DISPLAY <- c("Europe","North/Central America","South America","Asia","Oceania")
+# "Other" removed 2026-08-25: its only 2 members (site_id 67 "Clearwater/Wind
+# caves", 232 "Rio Secreto cave system") previously lacked p_t_pet_aet.csv
+# climate-product coverage entirely; both now have real AI-based classes
+# (Humid and Dry sub-humid respectively) after the SISAL_monv1_product_extraction
+# gap-filling work, so climate "Other" is now genuinely empty like Arid/Hyper arid.
+CLASS_LEVELS_DISPLAY  <- c("Humid","Dry sub-humid","Semi-arid")
+
 mon_region2 <- mon_region %>%
   mutate(site_id = as.double(site_id)) %>%  # Ensure site_id in mon_region is double
-  left_join(AI_groups %>% mutate(site_id = as.double(site_id)), by = "site_id") %>% 
+  left_join(AI_groups %>% mutate(site_id = as.double(site_id)), by = "site_id") %>%
   mutate(
     region         = coalesce(region, "Other"),
     classification = coalesce(classification, "Other"),
@@ -314,9 +351,9 @@ TYPE_COLS <- c(
   "drip_rate_measurement"               = "#F59E0B"   # amber
 )
 
-REGION_COLS <- setNames(viridis::magma(length(REGION_LEVELS), direction = -1),
-                        REGION_LEVELS)
-CLASS_COLS  <- setNames(viridis::cividis(length(CLASS_LEVELS)), CLASS_LEVELS)
+REGION_COLS <- setNames(viridis::magma(length(REGION_LEVELS_DISPLAY), direction = -1),
+                        REGION_LEVELS_DISPLAY)
+CLASS_COLS  <- setNames(viridis::cividis(length(CLASS_LEVELS_DISPLAY)), CLASS_LEVELS_DISPLAY)
 
 # ---- Wrappers ----
 region_lab <- function(x) str_replace(x, "North/Central America", "North/\nCentral America")
@@ -344,7 +381,7 @@ PIE_THEME <- theme(
 pie_region <- ggplot(region_summary, aes(x = "", y = total_sites, fill = region)) +
   geom_col() + coord_polar(theta = "y") + theme_void() +
   ggtitle("Sites by region") +
-  scale_fill_manual(values = REGION_COLS, limits = REGION_LEVELS, drop = FALSE, name = "") +
+  scale_fill_manual(values = REGION_COLS, limits = REGION_LEVELS_DISPLAY, drop = FALSE, name = "") +
   PIE_THEME
 
 # B) Monitoring data by region (bars)
@@ -355,7 +392,7 @@ hist_region <- mon_region_long %>%
   geom_col(position = "dodge") +
   ggtitle("Monitoring data by region") +
   labs(fill = "Data type", x = "Region", y = "Number of sites") +
-  scale_x_discrete(labels = region_lab, drop = FALSE) +
+  scale_x_discrete(limits = REGION_LEVELS_DISPLAY, labels = region_lab, drop = FALSE) +
   scale_fill_manual(
     values = TYPE_COLS,
     limits = TYPE_LEVELS,
@@ -372,7 +409,7 @@ hist_region <- mon_region_long %>%
 pie_climate <- ggplot(climate_summary, aes(x = "", y = total_sites, fill = classification)) +
   geom_col() + coord_polar(theta = "y") + theme_void() +
   ggtitle("Sites by climate class") +
-  scale_fill_manual(values = CLASS_COLS, limits = CLASS_LEVELS, drop = FALSE, name = "") +
+  scale_fill_manual(values = CLASS_COLS, limits = CLASS_LEVELS_DISPLAY, drop = FALSE, name = "") +
   PIE_THEME
 
 # D) Monitoring data by climate (bars) – same legend formatting as B
@@ -383,7 +420,7 @@ hist_climate <- mon_region_long %>%
   geom_col(position = "dodge") +
   ggtitle("Monitoring data by climate class") +
   labs(fill = "Data type", x = "Climate class", y = "Number of sites") +
-  scale_x_discrete(labels = class_lab, drop = FALSE) +
+  scale_x_discrete(limits = CLASS_LEVELS_DISPLAY, labels = class_lab, drop = FALSE) +
   scale_fill_manual(
     values = TYPE_COLS,
     limits = TYPE_LEVELS,
@@ -397,6 +434,12 @@ hist_climate <- mon_region_long %>%
   HIST_THEME
 
 # ---- Stacks ----
+# Africa/Middle East (region) and Arid/Hyper arid (climate) currently have zero
+# monitored sites and were dropped from the legends/axes above rather than shown
+# empty. Climate "Other" is kept (it holds 2 real sites: Clearwater/Wind caves,
+# site_id 67, and Rio Secreto cave system, site_id 232) -- both lack matching rows
+# in p_t_pet_aet.csv, so no Aridity Index could be computed for them. See chat/
+# manuscript caption text for the data-paucity note; not embedded in the figure.
 region_plot  <- pie_region  / hist_region  + plot_layout(heights = c(1.5, 1))
 climate_plot <- pie_climate / hist_climate + plot_layout(heights = c(1.5, 1))
 fig3_side_by_side <- region_plot | climate_plot
@@ -426,9 +469,9 @@ library(dplyr)
 
 # Reduce dataframes to include only coordinates
 sisal.coords <- data.frame(
-  site_id   = sisal$site_id,
-  latitude  = sisal$latitude,
-  longitude = sisal$longitude
+  site_id   = sisalv3$site_id,
+  latitude  = sisalv3$latitude,
+  longitude = sisalv3$longitude
 )
 
 mon.coords <- data.frame(
@@ -447,7 +490,7 @@ pairs$distance_m <- distHaversine(
 )
 
 # Convert distance into kilometers
-pairs$distance_km <- pairs$distance_m / 1000 
+pairs$distance_km <- pairs$distance_m / 1000
 
 # Filter number of Monv1 sites that are within 25 km of a SISALv3 site
 dist25_mon <- pairs %>% filter(distance_km <= 25)
@@ -471,7 +514,7 @@ n_mon_within_50 <- length(unique(dist50_mon$site_id_mon)) # Unique Mon sites wit
 pct_mon_within_50 <- if (n_mon > 0) round(100 * n_mon_within_50 / n_mon, 1) else NA_real_
 
 # 3) % SISALv3 within 25 km of any Monv1
-n_sisal <- nrow(sisal)
+n_sisal <- nrow(sisalv3)
 n_sisal_within_25 <- length(unique(dist25_sisal$site_id_sisal)) # Unique SISAL sites within 25 km of any Monv1
 pct_sisal_within_25 <- if (n_sisal > 0) round(100 * n_sisal_within_25 / n_sisal, 1) else NA_real_
 
@@ -496,4 +539,3 @@ tibble::tibble(
     sprintf("%d/%d", n_sisal_within_50, n_sisal)
   )
 ) %>% print(n = Inf)
-
