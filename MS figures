@@ -3,7 +3,7 @@ install.packages(c("tidyverse","sf","rnaturalearth","rnaturalearthdata",
 
 
 # --- SISAL monitoring plots (modernized: sf + rnaturalearth; no rgdal) ---
-# Original author: Franziska Lechleitner ; updated 2025-11-10
+# Original author: Franziska Lechleitner (with ChatGPT); updated 2025-11-10
 #
 # REQUIRED INPUT FILES (place in an "input/" folder next to this script):
 #   - Monv1_sites.csv               site_id, site_name, latitude, longitude,
@@ -111,7 +111,7 @@ base_map <- function(xlim = c(-180, 180), ylim = c(-90, 90)) {
     { if (!is.null(wokam_sf)) geom_sf(data = wokam_sf, fill = "grey67", color = NA, alpha = 0.7) } +
     coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
     theme_bw() +
-    labs(x = "Longitude [deg]", y = "Latitude [deg]") +
+    labs(x = "Longitude [°]", y = "Latitude [°]") +
     theme(
       axis.title.x = element_text(size = rel(0.8)),
       axis.text.x  = element_text(size = rel(0.8)),
@@ -145,20 +145,20 @@ add_site_layers <- function(p) {
 plot_global <- base_map() %>%
   add_site_layers() +
   theme(
-    legend.position       = c(0.02, 0.02),
-    legend.justification  = c(0, 0),
-    legend.box            = "vertical",
-    legend.box.background = element_blank(),
-    legend.background     = element_rect(colour = "black"),
+    # legend position/styling is intentionally NOT set here -- ggarrange()'s
+    # common.legend = TRUE, legend = "bottom" (below) extracts this plot's
+    # legend and places ONE shared copy centered under the whole A+B+C+D
+    # figure. Setting an absolute in-panel position here (as before) fights
+    # that mechanism and produces a misplaced/duplicated legend.
     panel.border          = element_blank(),
     # keep outer margins minimal so A spans side-to-side
     plot.margin           = margin(t = 0, r = 0, b = 0, l = 0),
 
-    # make A's axes match B–D:
-    axis.title.x = element_text(size = 15, face = "bold"),
-    axis.title.y = element_text(size = 15, face = "bold"),
-    axis.text.x  = element_text(size = 20, face = "bold"),
-    axis.text.y  = element_text(size = 20, face = "bold"),
+    # make A's axes match B-D, sized to actually fit the panel width:
+    axis.title.x = element_text(size = 13, face = "bold"),
+    axis.title.y = element_text(size = 13, face = "bold"),
+    axis.text.x  = element_text(size = 11, face = "bold"),
+    axis.text.y  = element_text(size = 11, face = "bold"),
 
     legend.title = element_text(size = 14, face = "bold"),
     legend.text  = element_text(size = 14, face = "bold")
@@ -171,10 +171,10 @@ lat_lab <- function(y) paste0(abs(y), "°", ifelse(y < 0, "S", "N"))
 inset_theme <- theme(
   aspect.ratio = 1,
   legend.position = "none",
-  axis.title.x = element_text(size = 19, face = "bold"),
-  axis.title.y = element_text(size = 19, face = "bold"),
-  axis.text.x  = element_text(size = 15, face = "bold"),
-  axis.text.y  = element_text(size = 15, face = "bold"),
+  axis.title.x = element_text(size = 13, face = "bold"),
+  axis.title.y = element_text(size = 13, face = "bold"),
+  axis.text.x  = element_text(size = 10, face = "bold"),
+  axis.text.y  = element_text(size = 10, face = "bold"),
   plot.margin  = margin(t = 5.5, r = 6, b = 8, l = 5.5),
   panel.border = element_blank()
 )
@@ -184,10 +184,10 @@ plot_NAm <- base_map(xlim = c(-140, -50), ylim = c(0, 60)) %>%
   add_site_layers() +
   scale_x_continuous(breaks = seq(-140, -50, by = 20),
                      labels = lon_lab,
-                     guide  = guide_axis(angle = 30)) +
+                     guide  = guide_axis(angle = 45)) +
   scale_y_continuous(breaks = seq(0, 60, by = 10),
                      labels = lat_lab) +
-  labs(x = "Longitude [deg]", y = "Latitude [deg]") +
+  labs(x = "Longitude [°]", y = "Latitude [°]") +
   inset_theme
 
 # C — Europe
@@ -195,10 +195,10 @@ plot_Europe <- base_map(xlim = c(-10, 30), ylim = c(30, 70)) %>%
   add_site_layers() +
   scale_x_continuous(breaks = seq(-10, 30, by = 10),
                      labels = lon_lab,
-                     guide  = guide_axis(angle = 30)) +
+                     guide  = guide_axis(angle = 45)) +
   scale_y_continuous(breaks = seq(30, 70, by = 10),
                      labels = lat_lab) +
-  labs(x = "Longitude [deg]", y = "Latitude [deg]") +
+  labs(x = "Longitude [°]", y = "Latitude [°]") +
   inset_theme
 
 # D — East Asia
@@ -206,10 +206,10 @@ plot_EAsia <- base_map(xlim = c(95, 130), ylim = c(15, 45)) %>%
   add_site_layers() +
   scale_x_continuous(breaks = seq(95, 130, by = 10),
                      labels = lon_lab,
-                     guide  = guide_axis(angle = 30)) +
+                     guide  = guide_axis(angle = 45)) +
   scale_y_continuous(breaks = seq(15, 45, by = 10),
                      labels = lat_lab) +
-  labs(x = "Longitude [deg]", y = "Latitude [deg]") +
+  labs(x = "Longitude [°]", y = "Latitude [°]") +
   inset_theme
 
 plot_map <- ggpubr::ggarrange(
@@ -221,7 +221,7 @@ plot_map <- ggpubr::ggarrange(
 )
 
 
-ggsave(file.path(plotpath, "Fig1_map.pdf"), plot_map,
+ggsave(file.path(plotpath, "Fig1_map.pdf"), plot_map, device = cairo_pdf,
        width = 1.7*12, height = 1.7*8, units = "cm", dpi = 300)
 ggsave(file.path(plotpath, "Fig1_map.png"), plot_map,
        width = 1.7*12, height = 1.7*8, units = "cm", dpi = 300)
@@ -446,17 +446,17 @@ fig3_side_by_side <- region_plot | climate_plot
 
 
 
-ggsave(file.path(plotpath, "Fig3_side_by_side.pdf"),
+ggsave(file.path(plotpath, "Fig3_side_by_side.pdf"), device = cairo_pdf,
        fig3_side_by_side, width = 1.7*20, height = 1.7*12, units = "cm", dpi = 300)
 ggsave(file.path(plotpath, "Fig3_side_by_side.png"),
        fig3_side_by_side, width = 1.7*20, height = 1.7*12, units = "cm", dpi = 300)
 
 # Also keep your separate exports if you want them:
-ggsave(file.path(plotpath, "Fig3_region.pdf"),  region_plot,
+ggsave(file.path(plotpath, "Fig3_region.pdf"),  region_plot, device = cairo_pdf,
        width = 1.7*10, height = 1.7*12, units = "cm", dpi = 300)
 ggsave(file.path(plotpath, "Fig3_region.png"),  region_plot,
        width = 1.7*10, height = 1.7*12, units = "cm", dpi = 300)
-ggsave(file.path(plotpath, "Fig3_climate.pdf"), climate_plot,
+ggsave(file.path(plotpath, "Fig3_climate.pdf"), climate_plot, device = cairo_pdf,
        width = 1.7*10, height = 1.7*12, units = "cm", dpi = 300)
 ggsave(file.path(plotpath, "Fig3_climate.png"), climate_plot,
        width = 1.7*10, height = 1.7*12, units = "cm", dpi = 300)
