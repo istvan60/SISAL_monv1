@@ -29,6 +29,12 @@ drip_iso_sample_data <- read.xlsx(file_name, sheet = "drip_iso_sample", startRow
 drip_rate_sample_data <- read.xlsx(file_name, sheet = "drip_rate_sample", startRow = 2, colNames = TRUE)
 mod_carb_sample_data <- read.xlsx(file_name, sheet = "mod_carb_sample", startRow = 2, colNames = TRUE)
 
+# The workbook template carries a stray space in one cave_pCO2_sample header
+# ("cave_pCO2_ measurement"), so strip whitespace from the header names before use.
+if (!is.null(cave_pCO2_sample_data)) {
+  names(cave_pCO2_sample_data) <- gsub("[[:space:]]+", "", names(cave_pCO2_sample_data))
+}
+
 cave_name <- site_data$site_name
 
 # Remove check variables
@@ -683,23 +689,23 @@ if (dim(cave_pCO2_sample_data)[1] != 0){
     all(is.na(x) | (grepl("^\\d{4}$", x) & as.numeric(x) >= min_val & as.numeric(x) <= max_val))
   }
   
-  # Checking 'cave_pCO2_sample_yyyy', 'cave_pCO2_sample_mm', 'cave_pCO2_sample_dd', and 'cave_pCO2_sample_hhmm'
-  T09.01_year_check <- check_4digit_within_range(cave_pCO2_sample_data$cave_pCO2_sample_yyyy, 1800, 2024)
-  T09.02_month_check <- check_1or2digit_within_range(cave_pCO2_sample_data$cave_pCO2_sample_mm, 1, 12)
-  T09.03_day_check <- check_1or2digit_within_range(cave_pCO2_sample_data$cave_pCO2_sample_dd, 1, 31)
-  T09.04_hhmm_check <- check_hhmm_within_range(cave_pCO2_sample_data$cave_pCO2_sample_hhmm, 1, 2359)
+  # Checking 'cave_pCO2_yyyy', 'cave_pCO2_mm', 'cave_pCO2_dd', and 'cave_pCO2_hhmm'
+  T09.01_year_check <- check_4digit_within_range(cave_pCO2_sample_data$cave_pCO2_yyyy, 1800, 2024)
+  T09.02_month_check <- check_1or2digit_within_range(cave_pCO2_sample_data$cave_pCO2_mm, 1, 12)
+  T09.03_day_check <- check_1or2digit_within_range(cave_pCO2_sample_data$cave_pCO2_dd, 1, 31)
+  T09.04_hhmm_check <- check_hhmm_within_range(cave_pCO2_sample_data$cave_pCO2_hhmm, 1, 2359)
   
-  # Check if 'cave_pCO2_sample_number' is a whole number
-  T09.05_number_check <- all(is.na(cave_pCO2_sample_data$cave_pCO2_sample_number) | 
-                               (cave_pCO2_sample_data$cave_pCO2_sample_number %% 1 == 0))
+  # Check if 'cave_pCO2_number' is a whole number
+  T09.05_number_check <- all(is.na(cave_pCO2_sample_data$cave_pCO2_number) | 
+                               (cave_pCO2_sample_data$cave_pCO2_number %% 1 == 0))
   
-  # Check if 'cave_pCO2_sample_measurement' is within 0 to 100000
-  T09.06_measurement_check <- all(is.na(cave_pCO2_sample_data$cave_pCO2_sample_measurement) | 
-                                    (as.numeric(cave_pCO2_sample_data$cave_pCO2_sample_measurement) >= 0 & 
-                                       as.numeric(cave_pCO2_sample_data$cave_pCO2_sample_measurement) <= 100000))
+  # Check if 'cave_pCO2_measurement' is within 0 to 100000
+  T09.06_measurement_check <- all(is.na(cave_pCO2_sample_data$cave_pCO2_measurement) | 
+                                    (as.numeric(cave_pCO2_sample_data$cave_pCO2_measurement) >= 0 & 
+                                       as.numeric(cave_pCO2_sample_data$cave_pCO2_measurement) <= 100000))
   
-  # Check if 'cave_pCO2_sample_precision' is a number
-  T09.07_precision_check <- all(is.na(cave_pCO2_sample_data$cave_pCO2_sample_precision) | !is.na(as.numeric(cave_pCO2_sample_data$cave_pCO2_sample_precision)))
+  # Check if 'cave_pCO2_precision' is a number
+  T09.07_precision_check <- all(is.na(cave_pCO2_sample_data$cave_pCO2_precision) | !is.na(as.numeric(cave_pCO2_sample_data$cave_pCO2_precision)))
   
   # Print results
   cat("Year Check: ", T09.01_year_check, "\n")
@@ -1009,17 +1015,19 @@ if (dim(mod_carb_sample_data)[1] != 0){
   T13.01_mineralogy_check <- all(is.na(mod_carb_sample_data$mod_carb_mineralogy) | 
                                    mod_carb_sample_data$mod_carb_mineralogy %in% valid_mineralogy)
   
-  # Checking 'mod_carb_start_yyyy', 'mod_carb_start_mm', 'mod_carb_start_dd', 'mod_carb_start_hhmm'
+  # Checking 'mod_carb_start_yyyy', 'mod_carb_start_mm', 'mod_carb_start_dd'
   T13.02_start_year_check <- check_4digit_within_range(mod_carb_sample_data$mod_carb_start_yyyy, 1800, 2024)
   T13.03_start_month_check <- check_1or2digit_within_range(mod_carb_sample_data$mod_carb_start_mm, 1, 12)
   T13.04_start_day_check <- check_1or2digit_within_range(mod_carb_sample_data$mod_carb_start_dd, 1, 31)
-  T13.05_start_hhmm_check <- check_hhmm_within_range(mod_carb_sample_data$mod_carb_start_hhmm, 1, 2359)
   
-  # Checking 'mod_carb_end_yyyy', 'mod_carb_end_mm', 'mod_carb_end_dd', 'mod_carb_end_hhmm'
+  # Checking 'mod_carb_end_yyyy', 'mod_carb_end_mm', 'mod_carb_end_dd'
+  # T13.05 and T13.09 were hhmm checks. mod_carb_sample has no time-of-day
+  # columns in the workbook or the database, so they tested NULL and always
+  # passed. Removed; the numbering is left with gaps so existing check IDs
+  # keep their meaning.
   T13.06_end_year_check <- check_4digit_within_range(mod_carb_sample_data$mod_carb_end_yyyy, 1800, 2024)
   T13.07_end_month_check <- check_1or2digit_within_range(mod_carb_sample_data$mod_carb_end_mm, 1, 12)
   T13.08_end_day_check <- check_1or2digit_within_range(mod_carb_sample_data$mod_carb_end_dd, 1, 31)
-  T13.09_end_hhmm_check <- check_hhmm_within_range(mod_carb_sample_data$mod_carb_end_hhmm, 1, 2359)
   
   # Check if numeric columns contain numbers excluding NA
   numeric_check_excluding_na <- function(x) {
@@ -1029,8 +1037,8 @@ if (dim(mod_carb_sample_data)[1] != 0){
   T13.10_accumulation_time_check <- numeric_check_excluding_na(mod_carb_sample_data$mod_carb_accumulation_time)
   T13.11_d18O_measurement_check <- numeric_check_excluding_na(mod_carb_sample_data$mod_carb_d18O_measurement)
   T13.12_d18O_precision_check <- numeric_check_excluding_na(mod_carb_sample_data$mod_carb_d18O_precision)
-  T13.13_d2H_measurement_check <- numeric_check_excluding_na(mod_carb_sample_data$mod_carb_d2H_measurement)
-  T13.14_d2H_precision_check <- numeric_check_excluding_na(mod_carb_sample_data$mod_carb_d2H_precision)
+  T13.13_d13C_measurement_check <- numeric_check_excluding_na(mod_carb_sample_data$mod_carb_d13C_measurement)
+  T13.14_d13C_precision_check <- numeric_check_excluding_na(mod_carb_sample_data$mod_carb_d13C_precision)
   
   # Print results
   cat("Accumulation Unit Check: ", T13.01_accumulation_unit_check, "\n")
@@ -1039,22 +1047,20 @@ if (dim(mod_carb_sample_data)[1] != 0){
   cat("Start Year Check: ", T13.02_start_year_check, "\n")
   cat("Start Month Check: ", T13.03_start_month_check, "\n")
   cat("Start Day Check: ", T13.04_start_day_check, "\n")
-  cat("Start HHMM Check: ", T13.05_start_hhmm_check, "\n")
   cat("End Year Check: ", T13.06_end_year_check, "\n")
   cat("End Month Check: ", T13.07_end_month_check, "\n")
   cat("End Day Check: ", T13.08_end_day_check, "\n")
-  cat("End HHMM Check: ", T13.09_end_hhmm_check, "\n")
   cat("Accumulation Time Check: ", T13.10_accumulation_time_check, "\n")
   cat("d18O Measurement Check: ", T13.11_d18O_measurement_check, "\n")
   cat("d18O Precision Check: ", T13.12_d18O_precision_check, "\n")
-  cat("d2H Measurement Check: ", T13.13_d2H_measurement_check, "\n")
-  cat("d2H Precision Check: ", T13.14_d2H_precision_check, "\n")
+  cat("d13C Measurement Check: ", T13.13_d13C_measurement_check, "\n")
+  cat("d13C Precision Check: ", T13.14_d13C_precision_check, "\n")
   
   # Summarize all checks
   T13_all_checks <- T13.01_accumulation_unit_check & T13.01_surface_check & T13.01_mineralogy_check & T13.02_start_year_check & T13.03_start_month_check & 
-    T13.04_start_day_check & T13.05_start_hhmm_check & T13.06_end_year_check & T13.07_end_month_check & T13.08_end_day_check & T13.09_end_hhmm_check & 
+    T13.04_start_day_check & T13.06_end_year_check & T13.07_end_month_check & T13.08_end_day_check & 
     T13.10_accumulation_time_check & T13.11_d18O_measurement_check & T13.12_d18O_precision_check & 
-    T13.13_d2H_measurement_check & T13.14_d2H_precision_check
+    T13.13_d13C_measurement_check & T13.14_d13C_precision_check
   
   T13_all_checks <- paste("Mod carb sample checks passed:",T13_all_checks)
   
@@ -1164,6 +1170,352 @@ cat("Reference Non-Empty Check: ", T15.05_reference_non_empty_check, "\n")
 T15_all_checks <- T15.01_site_name_check & T15.02_precip_entity_name_check & T15.03_cave_entity_name_check & T15.04_drip_entity_name_check & T15.05_reference_non_empty_check
 
 cat("All checks passed: ", T15_all_checks, "\n")
+
+############################### T16 - CROSS-FIELD DATE CHECKS ##################################################
+# Added 2026-08-27 following the v8.0 database audit.
+#
+# Checks T05, T07-T09 and T11-T13 validate yyyy, mm, dd and hhmm one field at a
+# time. A per-field range test cannot see:
+#   - a date whose parts are each in range but impossible together (31 September);
+#   - an interval whose end precedes its start - every part is still inside
+#     1800-2024, 1-12 and 1-31, so every per-field check passes;
+#   - an accumulation_time that contradicts the dates on either side of it;
+#   - a negative accumulation_time, which is still a number.
+# All 92 date defects found in the v8.0 audit pass the per-field checks above.
+# The checks below compose the parts into real Dates and compare them.
+
+# --- helpers -------------------------------------------------------------------
+
+# Build a Date from separate yyyy/mm/dd columns. NA where a part is missing or
+# where the combination is not a real calendar date. The round trip through
+# format() guards against lenient platform date parsing.
+make_date <- function(yyyy, mm, dd) {
+  y <- suppressWarnings(as.integer(yyyy))
+  m <- suppressWarnings(as.integer(mm))
+  d <- suppressWarnings(as.integer(dd))
+  out <- rep(as.Date(NA), length(y))
+  usable <- !is.na(y) & !is.na(m) & !is.na(d) & m >= 1 & m <= 12 & d >= 1 & d <= 31
+  if (any(usable)) {
+    txt <- sprintf("%04d-%02d-%02d", y[usable], m[usable], d[usable])
+    parsed <- as.Date(txt, format = "%Y-%m-%d")
+    parsed[is.na(parsed) | format(parsed, "%Y-%m-%d") != txt] <- as.Date(NA)
+    out[usable] <- parsed
+  }
+  out
+}
+
+# TRUE per row where the supplied parts form a real date (or nothing was supplied)
+rows_date_valid <- function(yyyy, mm, dd) {
+  supplied <- !is.na(suppressWarnings(as.integer(yyyy))) &
+              !is.na(suppressWarnings(as.integer(mm))) &
+              !is.na(suppressWarnings(as.integer(dd)))
+  !supplied | !is.na(make_date(yyyy, mm, dd))
+}
+
+# TRUE per row where end is not earlier than start (or either date is unusable)
+rows_date_ordered <- function(s_yyyy, s_mm, s_dd, e_yyyy, e_mm, e_dd) {
+  s <- make_date(s_yyyy, s_mm, s_dd)
+  e <- make_date(e_yyyy, e_mm, e_dd)
+  comparable <- !is.na(s) & !is.na(e)
+  !comparable | (e >= s)
+}
+
+# accumulation_time converted to days
+accumulation_in_days <- function(time, unit) {
+  t <- suppressWarnings(as.numeric(time))
+  u <- tolower(trimws(as.character(unit)))
+  f <- rep(NA_real_, length(t))
+  f[u %in% "seconds"] <- 1 / 86400
+  f[u %in% "minutes"] <- 1 / 1440
+  f[u %in% "hours"]   <- 1 / 24
+  f[u %in% "days"]    <- 1
+  f[u %in% "months"]  <- 30.4375
+  f[u %in% "years"]   <- 365.25
+  t * f
+}
+
+# TRUE per row where the dated span agrees with accumulation_time.
+# Only day/month/year units are testable: the sample dates carry no time of day,
+# so an interval declared in hours, minutes or seconds cannot be reconciled with them.
+rows_accumulation_consistent <- function(s_yyyy, s_mm, s_dd, e_yyyy, e_mm, e_dd,
+                                         time, unit, tol_days = 2) {
+  s <- make_date(s_yyyy, s_mm, s_dd)
+  e <- make_date(e_yyyy, e_mm, e_dd)
+  declared <- accumulation_in_days(time, unit)
+  u <- tolower(trimws(as.character(unit)))
+  # Some contributors record a single midpoint date in both start and end and put
+  # the real duration in accumulation_time. A zero-length dated span carries no
+  # duration to compare against, so those rows are not testable here; they are
+  # counted separately by rows_dates_encode_no_span().
+  testable <- !is.na(s) & !is.na(e) & !is.na(declared) &
+              u %in% c("days", "months", "years") & (e != s)
+  tol <- ifelse(u %in% "days", tol_days, pmax(tol_days, 0.10 * abs(declared)))
+  tol[is.na(tol)] <- tol_days
+  !testable | (abs(as.numeric(e - s) - declared) <= tol)
+}
+
+# TRUE per row where start and end are the same date but a duration of more than
+# one day is declared - the midpoint convention described above. Reported as a
+# note rather than a failure, because the dates simply carry no span.
+rows_dates_encode_no_span <- function(s_yyyy, s_mm, s_dd, e_yyyy, e_mm, e_dd, time, unit) {
+  s <- make_date(s_yyyy, s_mm, s_dd)
+  e <- make_date(e_yyyy, e_mm, e_dd)
+  declared <- accumulation_in_days(time, unit)
+  !is.na(s) & !is.na(e) & !is.na(declared) & (e == s) & (declared > 1)
+}
+
+# TRUE per row where accumulation_time is not negative
+rows_accumulation_nonnegative <- function(time) {
+  t <- suppressWarnings(as.numeric(time))
+  is.na(t) | t >= 0
+}
+
+# Data starts at spreadsheet row 3 (read.xlsx startRow = 2, plus the header row),
+# so add 2 to the data-frame index to get the row the contributor sees.
+report_failing_rows <- function(row_ok, label) {
+  bad <- which(!row_ok)
+  if (length(bad) > 0) {
+    cat("     ", label, " - workbook row(s): ",
+        paste(bad + 2, collapse = ", "), "\n", sep = "")
+  }
+}
+
+# --- tables that record an interval (start, end and accumulation_time) ----------
+
+# Check numbers are fixed per table, not allocated as we go, so that a check ID
+# means the same thing in every workbook even when some sheets are empty.
+
+t16_interval_tables <- list(
+  list(label = "precip_sample",    ids = c(1, 2, 3),    data = precip_sample_data,
+       s = "precip_start",    e = "precip_end",
+       time = "precip_accumulation_time",    unit = "precip_accumulation_unit"),
+  list(label = "drip_iso_sample",  ids = c(4, 5, 6),    data = drip_iso_sample_data,
+       s = "drip_iso_start",  e = "drip_iso_end",
+       time = "drip_iso_accumulation_time",  unit = "drip_iso_accumulation_unit"),
+  list(label = "drip_rate_sample", ids = c(7, 8, 9),    data = drip_rate_sample_data,
+       s = "drip_rate_start", e = "drip_rate_end",
+       time = "drip_rate_accumulation_time", unit = "drip_rate_accumulation_unit"),
+  list(label = "mod_carb_sample",  ids = c(10, 11, 12), data = mod_carb_sample_data,
+       s = "mod_carb_start",  e = "mod_carb_end",
+       time = "mod_carb_accumulation_time",  unit = "mod_carb_accumulation_unit")
+)
+
+# --- tables that record a single timestamp --------------------------------------
+
+t16_instant_tables <- list(
+  list(label = "cave_temperature_sample",       ids = 13, data = cave_temperature_sample_data,       p = "cave_temperature"),
+  list(label = "cave_relative_humidity_sample", ids = 14, data = cave_relative_humidity_sample_data, p = "cave_relative_humidity"),
+  list(label = "cave_pCO2_sample",              ids = 15, data = cave_pCO2_sample_data,              p = "cave_pCO2")
+)
+
+test_id <- function(n, suffix) sprintf("T16.%02d_%s_check", n, suffix)
+
+cat("\n---------------- T16 cross-field date checks ----------------\n")
+
+for (t16_tbl in t16_interval_tables) {
+  t16_d <- t16_tbl$data
+  if (is.null(t16_d) || nrow(t16_d) == 0) {
+    cat(t16_tbl$label, ": table contains no data.\n", sep = "")
+    next
+  }
+  t16_needed <- c(paste0(t16_tbl$s, c("_yyyy", "_mm", "_dd")),
+                  paste0(t16_tbl$e, c("_yyyy", "_mm", "_dd")),
+                  t16_tbl$time, t16_tbl$unit)
+  t16_absent <- setdiff(t16_needed, names(t16_d))
+  if (length(t16_absent) > 0) {
+    cat(t16_tbl$label, ": columns not found - ", paste(t16_absent, collapse = ", "), "\n", sep = "")
+    next
+  }
+
+  t16_sy <- t16_d[[paste0(t16_tbl$s, "_yyyy")]]
+  t16_sm <- t16_d[[paste0(t16_tbl$s, "_mm")]]
+  t16_sd <- t16_d[[paste0(t16_tbl$s, "_dd")]]
+  t16_ey <- t16_d[[paste0(t16_tbl$e, "_yyyy")]]
+  t16_em <- t16_d[[paste0(t16_tbl$e, "_mm")]]
+  t16_ed <- t16_d[[paste0(t16_tbl$e, "_dd")]]
+
+  t16_ok_valid <- rows_date_valid(t16_sy, t16_sm, t16_sd) &
+                  rows_date_valid(t16_ey, t16_em, t16_ed)
+  t16_ok_order <- rows_date_ordered(t16_sy, t16_sm, t16_sd, t16_ey, t16_em, t16_ed)
+  t16_ok_accum <- rows_accumulation_consistent(t16_sy, t16_sm, t16_sd,
+                                               t16_ey, t16_em, t16_ed,
+                                               t16_d[[t16_tbl$time]], t16_d[[t16_tbl$unit]]) &
+                  rows_accumulation_nonnegative(t16_d[[t16_tbl$time]])
+
+  assign(test_id(t16_tbl$ids[1], paste0(t16_tbl$label, "_calendar_date")), all(t16_ok_valid))
+  cat(t16_tbl$label, " - calendar dates real: ", all(t16_ok_valid), "\n", sep = "")
+  report_failing_rows(t16_ok_valid, "impossible calendar date")
+
+  assign(test_id(t16_tbl$ids[2], paste0(t16_tbl$label, "_date_order")), all(t16_ok_order))
+  cat(t16_tbl$label, " - end not before start: ", all(t16_ok_order), "\n", sep = "")
+  report_failing_rows(t16_ok_order, "end date precedes start date")
+
+  assign(test_id(t16_tbl$ids[3], paste0(t16_tbl$label, "_accumulation_time")), all(t16_ok_accum))
+  cat(t16_tbl$label, " - accumulation_time agrees with dates: ", all(t16_ok_accum), "\n", sep = "")
+  report_failing_rows(t16_ok_accum, "accumulation_time disagrees with the dated interval, or is negative")
+
+  t16_no_span <- rows_dates_encode_no_span(t16_sy, t16_sm, t16_sd,
+                                           t16_ey, t16_em, t16_ed,
+                                           t16_d[[t16_tbl$time]], t16_d[[t16_tbl$unit]])
+  if (any(t16_no_span)) {
+    cat("     note: ", sum(t16_no_span), " row(s) repeat one date as both start and end while\n",
+        "           declaring a longer accumulation_time - a midpoint date with the\n",
+        "           duration held in accumulation_time. Not counted as a failure.\n", sep = "")
+  }
+}
+
+for (t16_tbl in t16_instant_tables) {
+  t16_d <- t16_tbl$data
+  if (is.null(t16_d) || nrow(t16_d) == 0) {
+    cat(t16_tbl$label, ": table contains no data.\n", sep = "")
+    next
+  }
+  t16_needed <- paste0(t16_tbl$p, c("_yyyy", "_mm", "_dd"))
+  t16_absent <- setdiff(t16_needed, names(t16_d))
+  if (length(t16_absent) > 0) {
+    cat(t16_tbl$label, ": columns not found - ", paste(t16_absent, collapse = ", "), "\n", sep = "")
+    next
+  }
+  t16_ok_valid <- rows_date_valid(t16_d[[t16_needed[1]]],
+                                  t16_d[[t16_needed[2]]],
+                                  t16_d[[t16_needed[3]]])
+  assign(test_id(t16_tbl$ids[1], paste0(t16_tbl$label, "_calendar_date")), all(t16_ok_valid))
+  cat(t16_tbl$label, " - calendar dates real: ", all(t16_ok_valid), "\n", sep = "")
+  report_failing_rows(t16_ok_valid, "impossible calendar date")
+}
+
+# Summarize all checks
+T16_all_checks <- all(unlist(mget(grep("^T16\\.[0-9]{2}_", ls(), value = TRUE),
+                                  envir = environment(), ifnotfound = list(TRUE))))
+T16_all_checks <- paste("Cross-field date checks passed:", T16_all_checks)
+
+cat("All checks passed: ", T16_all_checks, "\n")
+
+############################### T17 - DUPLICATE ROWS AND SERIES ################################
+
+# Two defects present in v8 that no per-field range check can see, because every
+# individual value in them is legal.
+#
+#  1. A measurement row repeated under a second sample id: same entity, same
+#     dates, same values. v8 shipped 45 of these across four tables. Note that
+#     accumulation_time is deliberately NOT part of the key - three of those 45
+#     pairs agreed on everything except that column, and would be missed by a
+#     whole-row comparison.
+#
+#  2. Two entities in the same workbook holding an identical measurement series.
+#     In v8 shihua_cave_drip_iso_pl2 and shihua_cave_drip_iso_sh share all 27
+#     d18O and d2H values, which two independent drip sites do not do.
+#
+#     There is a related v8 error this check cannot see: littletrimmer_cave_
+#     iso_s2 carried frankcombe_cave_iso_s1's drip rates. Those entities belong
+#     to different cave sites and therefore different workbooks, so only a check
+#     run over the compiled database can catch that case. This one covers the
+#     within-workbook half of the problem.
+
+# --- helpers -------------------------------------------------------------------
+
+# The entity name column is precip_entity_name in the precip sheets and
+# drip_entity_name in the others; find it rather than hard-coding it.
+t17_entity_col <- function(d) {
+  cc <- grep("_entity_name$", names(d), value = TRUE)
+  if (length(cc) > 0) cc[1] else NA_character_
+}
+
+# Measured quantities only. Matching on the suffix keeps this working whether the
+# sheet uses the workbook names (drip_d18O_measurement) or the database ones
+# (drip_iso_d18O_measurement).
+t17_value_cols <- function(d) grep("_measurement$|_amount$", names(d), value = TRUE)
+
+# Build one comparable string per row from the given columns. NA is a value here:
+# two rows that are both blank in a column agree in that column.
+t17_row_key <- function(d, cols) {
+  cols <- intersect(cols, names(d))
+  if (length(cols) == 0) return(NULL)
+  parts <- lapply(cols, function(cc) {
+    v <- d[[cc]]
+    ifelse(is.na(v), "<NA>", trimws(as.character(v)))
+  })
+  do.call(paste, c(parts, sep = "\r"))
+}
+
+# One signature per entity, from its sorted measured values. Entities with fewer
+# than t17_min_values readings are ignored: short series coincide by chance.
+t17_min_values <- 3
+t17_series_signature <- function(d, ent_col, value_cols) {
+  value_cols <- intersect(value_cols, names(d))
+  if (length(value_cols) == 0) return(NULL)
+  tapply(seq_len(nrow(d)), as.character(d[[ent_col]]), function(ix) {
+    v <- suppressWarnings(as.numeric(unlist(lapply(value_cols, function(cc) d[[cc]][ix]))))
+    v <- v[!is.na(v)]
+    if (length(v) < t17_min_values) return(NA_character_)
+    paste(sprintf("%.10g", sort(v)), collapse = ",")
+  })
+}
+
+t17_test_id <- function(n, suffix) sprintf("T17.%02d_%s_check", n, suffix)
+
+# Check numbers are fixed per table, as in T16, so an ID means the same thing in
+# every workbook even when a sheet is empty.
+t17_ids_rows   <- c(precip_sample = 1, drip_iso_sample = 2, drip_rate_sample = 3, mod_carb_sample = 4)
+t17_ids_series <- c(precip_sample = 5, drip_iso_sample = 6, drip_rate_sample = 7, mod_carb_sample = 8)
+
+cat("\n---------------- T17 duplicate rows and series ----------------\n")
+
+for (t17_tbl in t16_interval_tables) {
+  t17_d     <- t17_tbl$data
+  t17_label <- t17_tbl$label
+  t17_id_r  <- t17_ids_rows[[t17_label]]
+  t17_id_s  <- t17_ids_series[[t17_label]]
+
+  if (is.null(t17_d) || nrow(t17_d) == 0) {
+    cat(t17_label, ": table contains no data.\n", sep = "")
+    next
+  }
+
+  t17_ent  <- t17_entity_col(t17_d)
+  t17_vals <- t17_value_cols(t17_d)
+  if (is.na(t17_ent) || length(t17_vals) == 0) {
+    cat(t17_label, ": no entity name or no measurement column found - skipped.\n", sep = "")
+    next
+  }
+
+  # --- 1. repeated rows -------------------------------------------------------
+  t17_dates <- c(paste0(t17_tbl$s, c("_yyyy", "_mm", "_dd", "_hhmm")),
+                 paste0(t17_tbl$e, c("_yyyy", "_mm", "_dd", "_hhmm")))
+  t17_key <- t17_row_key(t17_d, c(t17_ent, t17_dates, t17_vals))
+  if (is.null(t17_key)) {
+    cat(t17_label, ": key columns not found - duplicate row check skipped.\n", sep = "")
+  } else {
+    t17_ok_rows <- !duplicated(t17_key)
+    assign(t17_test_id(t17_id_r, paste0(t17_label, "_duplicate_rows")), all(t17_ok_rows))
+    cat(t17_label, " - no repeated measurement rows: ", all(t17_ok_rows), "\n", sep = "")
+    report_failing_rows(t17_ok_rows,
+      "repeats an earlier row (same entity, dates and measured values)")
+  }
+
+  # --- 2. one entity carrying another's series --------------------------------
+  t17_sig <- t17_series_signature(t17_d, t17_ent, t17_vals)
+  t17_sig <- t17_sig[!is.na(t17_sig)]
+  t17_shared <- if (length(t17_sig) > 1) names(which(table(t17_sig) > 1)) else character(0)
+  t17_ok_series <- length(t17_shared) == 0
+  assign(t17_test_id(t17_id_s, paste0(t17_label, "_distinct_series")), t17_ok_series)
+  cat(t17_label, " - every entity has its own series: ", t17_ok_series, "\n", sep = "")
+  if (!t17_ok_series) {
+    for (t17_s in t17_shared) {
+      t17_who <- names(t17_sig)[t17_sig == t17_s]
+      cat("     these entities share an identical set of ",
+          length(strsplit(t17_s, ",", fixed = TRUE)[[1]]), " values: ",
+          paste(t17_who, collapse = ", "), "\n", sep = "")
+    }
+  }
+}
+
+# Summarize all checks
+T17_all_checks <- all(unlist(mget(grep("^T17\\.[0-9]{2}_", ls(), value = TRUE),
+                                  envir = environment(), ifnotfound = list(TRUE))))
+T17_all_checks <- paste("Duplicate row and series checks passed:", T17_all_checks)
+
+cat("All checks passed: ", T17_all_checks, "\n")
 
 ############################### PLOTTING ######################################################
 # text output
