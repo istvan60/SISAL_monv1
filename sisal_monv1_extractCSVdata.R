@@ -28,7 +28,7 @@ for (file in csv_files) {
   file_name <- tools::file_path_sans_ext(basename(file))
   message("Reading: ", file_name)
   
-  df <- readr::read_csv(file, show_col_types = FALSE, progress = FALSE)
+  df <- readr::read_csv(file, show_col_types = FALSE, progress = FALSE, guess_max = Inf)
   assign(file_name, df, envir = .GlobalEnv)
 }
 
