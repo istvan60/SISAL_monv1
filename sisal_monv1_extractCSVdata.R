@@ -15,7 +15,7 @@ library(readr)
 # Important: put ONLY the SISAL_monv1 CSV tables in this folder.
 ########################################################
 
-folder_path <- "E:/Google Drive/flat_csv_db_v8.0"  # <-- change
+folder_path <- "E:/Google Drive/flat_csv_db_v8.1"  # <-- change
 
 csv_files <- list.files(path = folder_path, pattern = "\\.csv$", full.names = TRUE)
 
