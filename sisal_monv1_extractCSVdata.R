@@ -37,7 +37,7 @@ for (file in csv_files) {
 ########################################################
 
 required_tables <- c(
-  "site", "notes", "reference",
+  "site", "notes", "reference", "p_t_pet_aet",
   "site_link_precip", "site_link_reference", "entity_link_reference",
   "precip_site", "precip_entity", "precip_sample",
   "cave_entity",
