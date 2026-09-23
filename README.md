@@ -4,6 +4,10 @@ MS figures -> code used to derive the figures shown in the database paper to be 
 
 GlobalProductsScripts_SISAL_monv1.7z -> Original MATLAB scripts (ERA5_Temp.m, GLEAM_PET_AET.m, MSWEP_Precip.m) used to extract ERA5 temperature, GLEAM PET/AET, and MSWEP precipitation for SISAL_monv1 sites from their respective gridded products
 
+sisal_monv1_db_schema_final.sql -> the schema the published SISAL_monv1 database was built from. Run it to create an empty database with the same tables, keys and indexes.
+
+schema_SISAL_Monv1_v2.sql -> an earlier draft of the schema, kept for reference only. Its table and column names differ from the published database, so do not build on it.
+
 R and Python scripts to connect to the database loaded into MySQL and some query examples
 sisal_connect2db_v3.R sisal_connect2db_v3.py
 
